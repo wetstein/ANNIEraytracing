@@ -27,7 +27,7 @@ DEFAULT_WAVELENGTH = 350.0
 def generate_cherenkov_photons(
     muon_pos: tuple[float, float, float],
     muon_dir: tuple[float, float, float],
-    #Adding in array of wavelengths | Unused currently
+    #Adding in array of wavelengths | Unused currently but will replace the current DEFAULT_WAVELENGTH
     # WaveLengths = np.linspace(10,1400, num = 100) #nm from UV to IR, low spacing for now to reduce computaional load
     n: int,
     cherenkov_angle: float = CHERENKOV_ANGLE,
@@ -92,7 +92,7 @@ def generate_cherenkov_photons(
     # theta: random polar angle within the cone (filled cone, not just
     # the cone surface).  For a thin Cherenkov ring, sample near a fixed
     # angle instead of [0, cherenkov_angle].
-    theta = rng.uniform(0, cherenkov_angle, n)
+    theta = cherenkov_angle #This should be the way to simulate only the Cherenkov Angle for a single muon rather than a filled cone, but the visual model still shows a cone
     cos_theta = np.cos(theta)
     sin_theta = np.sin(theta)
 
