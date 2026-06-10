@@ -41,9 +41,11 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
         #Calculating travel time to detector, not yet accounting for time delay between photon generation events
         travelTime = (LengthTravel-(j)*(10**-2))*np.cos(theta)/(c/n)/(10**-9) # Time to reach detector in ns
         timeDelay = ((10**-2) / (beta*c))/(10**-9) # Time delay between photon generation in ns
-        if travelTime == timeDelay:
-            travelTime = 0 #This is for the end case where the photon is generated at the end of the track/at the detector itself | Could be wrong
-
+        
+        #if travelTime == timeDelay:
+            #travelTime = 0 #This is for the end case where the photon is generated at the end of the track/at the detector itself | Could be wrong
+        
+        travelTimeTotal = travelTime + timeDelay # Total travel time to detector in ns
         #Generate photonNum photons per cm along the track and perform any necessary calculations
         for k in range(photonNum): 
             #Generate photon ID
@@ -59,13 +61,12 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
             netK.append(k+(j*150)) 
             print(netK[-1]) #Just checking that the indexing is working properly
 
-            #The total travel time must be calculated after finding the x/y coordinates, otherwise the time delay component of travelTime would overshoot the total distance traveled
-            travelTime += timeDelay # Add time delay to travel time for each photon's total travel time
-            photonDat.append((photonSegmentID, photonID, travelTime, photonPhi, photonX, photonY)) # Append photon id, time, and azimuthal angle to list
+
+            photonDat.append((photonSegmentID, photonID, travelTimeTotal, photonPhi, photonX, photonY)) # Append photon id, time, and azimuthal angle to list
             
             #This must be in the k for loop in order to work properly 
             #Having a seperate file to view the output is the easiest way to check that the code is running properly
-            file.write(f"{photonSegmentID}, {photonID}, {travelTime}, {photonPhi}, {photonX}, {photonY}\n") # Write photon id, time, and azimuthal angle to file
+            file.write(f"{photonSegmentID}, {photonID}, {travelTimeTotal}, {photonPhi}, {photonX}, {photonY}\n") # Write photon id, time, and azimuthal angle to file
 
 
 
