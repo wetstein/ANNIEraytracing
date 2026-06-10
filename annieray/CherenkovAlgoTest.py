@@ -72,5 +72,5 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
 
         
 #Nice to have
-print('Photon time error is approximately', photonTimeError, 'ns \n')
+print(f"Photon time error is approximately {photonTimeError:.6f}, ns \n") 
 print("\nCherenkovAlgoTest.py is Finished Running \n")
