@@ -24,7 +24,7 @@ photonNum = 150 #Number of photons generated per cm along track
 #Begin Cherenkov photon generation algorithm
 i = LengthTravel*100 #convert 10 m to cm for use as number of iterations in for loop
 photonDat = [] #initializing list to hold photon id, segment generation id, azimuthal angle, and time taken to reach end of the detector
-netK = [0] #Initializing list to hold total k iterations
+netK = [-1] #Initializing list to hold total k iterations
 
 #Considerations for error
 photonTimeError = (LengthTravel/i) *(10**9) / (c/n) #Time error between photon generation events in ns
