@@ -19,25 +19,34 @@ LengthTravel = 10 #Perpendicular distance from muon track to detector and muon t
 photonNum = 150 #Number of photons generated per cm along track
 
 
+
+
 #Begin Cherenkov photon generation algorithm
 i = LengthTravel*100 #convert 10 m to cm for use as number of iterations in for loop
 photonDat = [] #initializing list to hold photon id, segment generation id, azimuthal angle, and time taken to reach end of the detector
 netK = [0] #Initializing list to hold total k iterations
+
+#Considerations for error
+photonTimeError = (LengthTravel/i) *(10**9) / (c/n) #Time error between photon generation events in ns
+
 
 #This will write over any previous version of the file every time the code is run
 with open("CherenkovAlgoTestData.txt", "w") as file:
     file.write("NOT FOR USE IN ANY PART OF THE CODE OR ANALYSIS \n Segment ID, Photon ID, Time to reach detector (ns), Azimuthal Angle (rad), X Coordinate (m), Y Coordinate (m)\n") # Write header to file   
     #Generating one photon every cm along the track
     for j in range(i+1): #+1 to include the end point of the track as well as the zeroth point where the first photon is generated (actually a nice case of 0 indexing working in favor)
-        #Generate photon id 
-        photonSegmentID = j+1
+        
+        photonSegmentID = j+1 #This is the ID for the segment of the track where the photon is generated
+
+        #Calculating travel time to detector, not yet accounting for time delay between photon generation events
         travelTime = (LengthTravel-(j)*(10**-2))*np.cos(theta)/(c/n)/(10**-9) # Time to reach detector in ns
         timeDelay = ((10**-2) / (beta*c))/(10**-9) # Time delay between photon generation in ns
         if travelTime == timeDelay:
-            travelTime = 0 #This is for the end case where the photon is generated at the end of the track/at the detector itself
+            travelTime = 0 #This is for the end case where the photon is generated at the end of the track/at the detector itself | Could be wrong
 
-        for k in range(photonNum): #Generate photonNum photons per cm along the track
-            #Generate photon id within segment
+        #Generate photonNum photons per cm along the track and perform any necessary calculations
+        for k in range(photonNum): 
+            #Generate photon ID
             photonID = netK[-1]+1 #Should be the only line required to assign the id
 
             #Finding spatial coordinates of photon at detector plane
@@ -46,17 +55,21 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
             photonX = photonRadial * np.cos(photonPhi) #X coordinate of photon at detector plane
             photonY = photonRadial * np.sin(photonPhi) #Y coordinate of photon at detector plane
 
-            netK.append(k+(j*150)) #This is the total photon id, +1 has been added to k to avoid multiple zeros in the photon id
-            print(netK[-1])
-            #print('Photon Segment ID:', photonSegmentID, 'Photon ID:', photonID, 'Time to reach detector (ns):', travelTime, 'Azimuthal Angle (rad):', photonPhi) # Print photon id, time, and azimuthal angle to console
-            photonDat.append((photonSegmentID, photonID, travelTime, photonPhi, photonX, photonY)) # Append photon id, time, and azimuthal angle to list
+            #This is the total photon id, +1 has been added to k to avoid multiple zeros in the photon id
+            netK.append(k+(j*150)) 
+            print(netK[-1]) #Just checking that the indexing is working properly
+
             #The total travel time must be calculated after finding the x/y coordinates, otherwise the time delay component of travelTime would overshoot the total distance traveled
-            travelTime += timeDelay # Add time delay to travel time for each photon
-            #Current issue is that this is writing the file only for the last k iteration for each j iteration, and it just writing over every previous written version
+            travelTime += timeDelay # Add time delay to travel time for each photon's total travel time
+            photonDat.append((photonSegmentID, photonID, travelTime, photonPhi, photonX, photonY)) # Append photon id, time, and azimuthal angle to list
+            
+            #This must be in the k for loop in order to work properly 
+            #Having a seperate file to view the output is the easiest way to check that the code is running properly
             file.write(f"{photonSegmentID}, {photonID}, {travelTime}, {photonPhi}, {photonX}, {photonY}\n") # Write photon id, time, and azimuthal angle to file
 
 
 
         
-
+#Nice to have
 print("CherenkovAlgoTest.py is Finished Running")
+print('Photon time error is approximately', photonTimeError, 'ns')
