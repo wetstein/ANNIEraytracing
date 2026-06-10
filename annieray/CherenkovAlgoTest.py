@@ -5,17 +5,17 @@
 import numpy as np
 import random as rng
 
-
+print("CherenkovALgoTest.py is Running \n __________________________ ")
 #Constants
 c = 299792458 #Speed of light in m/s
 
 
 #User set parameters
-muonDirec = [0,0,1] # Direction of muon travel as a unit vector | not needed for basic algorithm/not current in use
+muonDirec = [0,0,1] # Direction of muon travel as a unit vector | for future implementation, choose muon direction and use it to find the length of track  
 beta = 0.99 # Speed of the muon as a fraction of the speed of light
 n =1.34 #Refractive index of medium
 theta = np.arccos(1/(beta*n)) #Cherenkov angle in radians
-LengthTravel = 10 #Perpendicular distance from muon track to detector and muon track length in m
+LengthTravel = 10 #Distance from muon track to detector and muon track length in m (assuming the muon track is normal to detector plane) | for future use muon velocity to find length normal to detector
 photonNum = 150 #Number of photons generated per cm along track
 
 
@@ -42,9 +42,10 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
         travelTime = (LengthTravel-(j)*(10**-2))*np.cos(theta)/(c/n)/(10**-9) # Time to reach detector in ns
         timeDelay = ((10**-2) / (beta*c))/(10**-9) # Time delay between photon generation in ns
         
+        #There should be some sort of check against error here, but I am not sure what that should look like
         #if travelTime == timeDelay:
             #travelTime = 0 #This is for the end case where the photon is generated at the end of the track/at the detector itself | Could be wrong
-        
+        print('Photon Generation Event:',j, '\n') #Nice to have some way of measuring progress is happening
         travelTimeTotal = travelTime + timeDelay # Total travel time to detector in ns
         #Generate photonNum photons per cm along the track and perform any necessary calculations
         for k in range(photonNum): 
@@ -59,7 +60,6 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
 
             #This is the total photon id, +1 has been added to k to avoid multiple zeros in the photon id
             netK.append(k+(j*150)) 
-            print(netK[-1]) #Just checking that the indexing is working properly
 
 
             photonDat.append((photonSegmentID, photonID, travelTimeTotal, photonPhi, photonX, photonY)) # Append photon id, time, and azimuthal angle to list
@@ -72,5 +72,5 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
 
         
 #Nice to have
-print("CherenkovAlgoTest.py is Finished Running")
-print('Photon time error is approximately', photonTimeError, 'ns')
+print('Photon time error is approximately', photonTimeError, 'ns \n')
+print("\nCherenkovAlgoTest.py is Finished Running \n")
