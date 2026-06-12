@@ -4,73 +4,101 @@
 
 import numpy as np
 import random as rng
+import math
 
-print("CherenkovALgoTest.py is Running \n __________________________ ")
+
+print("CherenkovAlgoTest.py is Running \n __________________________ ")
+
 #Constants
 c = 299792458 #Speed of light in m/s
 
+#Rounding Function
+def truncate(number, decimals = 0):
+    factor = 10 ** decimals
+    return math.trunc(number*factor)/factor
 
 #User set parameters
-muonDirec = [0,0,1] # Direction of muon travel as a unit vector | for future implementation, choose muon direction and use it to find the length of track  
-beta = 0.99 # Speed of the muon as a fraction of the speed of light
+muonDirec = np.array([0,0,1]) # Direction of muon travel as a unit vector | for future implementation, choose muon direction and use it to find the length of track  
+beta = 0.9999 # Speed of the muon as a fraction of the speed of light
 n =1.34 #Refractive index of medium
-theta = np.arccos(1/(beta*n)) #Cherenkov angle in radians
-LengthTravel = 10 #Distance from muon track to detector and muon track length in m (assuming the muon track is normal to detector plane) | for future use muon velocity to find length normal to detector
-photonNum = 150 #Number of photons generated per cm along track
-
-
+muonPath = np.array([0,0,4]) #Total distance traveled by the muon in m
+trackPrec = 2 #control the number of decimal places (in m) that you want for the measurement of the muon track
+muonStart = np.array([0,0,0,0]) #Set cords for where in the tank the muon starts | x,y,z,t (m),(s)
 
 
 #Begin Cherenkov photon generation algorithm
-i = LengthTravel*100 #convert 10 m to cm for use as number of iterations in for loop
-photonDat = [] #initializing list to hold photon id, segment generation id, azimuthal angle, and time taken to reach end of the detector
-netK = [-1] #Initializing list to hold total k iterations
+theta = np.arccos(1/(beta*n)) #Cherenkov angle in radians
 
-#Considerations for error
-photonTimeError = (LengthTravel/i) *(10**9) / (c/n) #Time error between photon generation events in ns
+LengthTravel = truncate(np.sqrt(muonPath[0]**2+muonPath[1]**2+muonPath[2]**2),trackPrec) #Basic linear muon path approximation, the last variable controls decimal place
+i = int(LengthTravel*10**trackPrec) #convert m to the desired precision for use as number of iterations in for loop
+
+photonDat = [] #initializing list to hold photon id, segment generation id, azimuthal angle, etc.
+netK = [-1] #Initializing list to hold total k iterations
+createTime = [] #Initializing a list that will track run time and photon creation time
+muonSpeed = beta*c #Speed of muon in m/s
+#Calculting time delay and recording the generation time of each photon
+timeDelay = ((10**(-trackPrec)) / (beta*c))/(10**-9) # Time delay between photon generation in ns
 
 
 #This will write over any previous version of the file every time the code is run
 with open("CherenkovAlgoTestData.txt", "w") as file:
-    file.write("NOT FOR USE IN ANY PART OF THE CODE OR ANALYSIS \n Segment ID, Photon ID, Time to reach detector (ns), Azimuthal Angle (rad), X Coordinate (m), Y Coordinate (m)\n") # Write header to file   
-    #Generating one photon every cm along the track
+    file.write("NOT FOR USE IN ANY PART OF THE CODE OR ANALYSIS \n Segment ID, Photon ID, Time of Creation (ns), Global Xhat, Global Yhat, Global Zhat, Global X (m), Global Y (m), Global Z (m)\n") # Write header to file   
+    #Generating one photon per unit length along the track
     for j in range(i+1): #+1 to include the end point of the track as well as the zeroth point where the first photon is generated (actually a nice case of 0 indexing working in favor)
         
         photonSegmentID = j+1 #This is the ID for the segment of the track where the photon is generated
 
-        #Calculating travel time to detector, not yet accounting for time delay between photon generation events
-        travelTime = (LengthTravel-(j)*(10**-2))*np.cos(theta)/(c/n)/(10**-9) # Time to reach detector in ns
-        timeDelay = ((10**-2) / (beta*c))/(10**-9) # Time delay between photon generation in ns
-        
-        #There should be some sort of check against error here, but I am not sure what that should look like
-        #if travelTime == timeDelay:
-            #travelTime = 0 #This is for the end case where the photon is generated at the end of the track/at the detector itself | Could be wrong
-        print('Photon Generation Event:',j, '\n') #Nice to have some way of measuring progress is happening
-        travelTimeTotal = travelTime + timeDelay # Total travel time to detector in ns
-        #Generate photonNum photons per cm along the track and perform any necessary calculations
-        for k in range(photonNum): 
-            #Generate photon ID
-            photonID = netK[-1]+1 #Should be the only line required to assign the id
+        #This is where the dice roll for wavelength should happen | These will get put in photonDat array
+        wavelength = 350 #Wavelngth in nm, will be an array at some point | unincorporated currently
+        photonSpeed = c/n #Speed of photon in m/s | Needs to be based on wavelength in the future
 
-            #Finding spatial coordinates of photon at detector plane
+        #Cords of muon relative to muon start point 
+        posX = (muonDirec[0])*j*(10**-trackPrec) +muonStart[0]#X cord in m
+        posY = (muonDirec[1])*j*(10**-trackPrec)+muonStart[1] #Y cord in m
+        posZ = (muonDirec[2])*j*(10**-trackPrec)+muonStart[2] #Z cord in m
+        timeMuon = j*timeDelay*(10**-9)+muonStart[3] #This is the muon time (s)
+        print('Photon Generation Event:',j, '\n') #Nice to have some way of measuring progress is happening
+        
+        photonNum = 150 #Number of photons generated per cm along track | Need to make accurate later
+
+        #Generate photonNum photons per unit length along the track and perform any necessary calculations
+        for k in range(photonNum): 
+
+            #Run spatial probability of photon generation
+            photonProb = rng.uniform(0,1)
+            photonPos = j*(10**-trackPrec)+photonProb*(10**-trackPrec) #Position of photon along track in m
+            
+            #Calculate photon creation time in ns from some given start time | Remember the start time is defined in seconds
+            createTime.append(((photonPos)/(muonSpeed)+muonStart[3])*(10**9))
+
+            #Generate photon ID
+            photonID = netK[-1]+2 #Should be the only line required to assign the id
+
+            #Finding photon position in global
+            photonX = photonPos * muonDirec[0] + muonStart[0] #Getting global X photon cord (m) 
+            photonY = photonPos * muonDirec[1] + muonStart[1] #Getting global Y photon cord (m) 
+            photonZ = photonPos * muonDirec[2] + muonStart[2] #Getting global Z photon cord (m) 
+
+            #Finding spatial directions of photon compared to global
             photonPhi = rng.uniform(0, 2 * np.pi) #Random azimuthal angle for photon emission
-            photonRadial = travelTime * (c/n) *(10**-9) #Radial distance from center (muon track serves as origin) in m
-            photonX = photonRadial * np.cos(photonPhi) #X coordinate of photon at detector plane
-            photonY = photonRadial * np.sin(photonPhi) #Y coordinate of photon at detector plane
+            photonXhat = np.cos(photonPhi) + muonDirec[0]
+            photonYhat = np.sin(photonPhi) + muonDirec[1]
+            photonZhat = np.sin(theta) + muonDirec[2]
 
             #This is the total photon id, +1 has been added to k to avoid multiple zeros in the photon id
             netK.append(k+(j*150)) 
 
 
-            photonDat.append((photonSegmentID, photonID, travelTimeTotal, photonPhi, photonX, photonY)) # Append photon id, time, and azimuthal angle to list
+            photonDat.append((photonSegmentID, photonID, createTime[-1], photonXhat, photonYhat, photonZhat, photonX, photonY, photonZ)) # Append photon id, time, and azimuthal angle to list
             
             #This must be in the k for loop in order to work properly 
             #Having a seperate file to view the output is the easiest way to check that the code is running properly
-            file.write(f"{photonSegmentID}, {photonID}, {travelTimeTotal}, {photonPhi}, {photonX}, {photonY}\n") # Write photon id, time, and azimuthal angle to file
+            file.write(f"{photonSegmentID}, {photonID}, {createTime[-1]}, {photonPhi},{photonXhat},{photonYhat},{photonZhat}, {photonX}, {photonY}, {photonZ}\n") # Write photon id, time, and azimuthal angle to file
 
 
 
         
 #Nice to have
-print(f"Photon time error is approximately {photonTimeError:.6f}, ns \n") 
+#print(f"Photon time error is approximately {photonTimeError:.6f}, ns \n")
+print(f"Muon path length in the detector is approximately, {LengthTravel} m\n") 
 print("\nCherenkovAlgoTest.py is Finished Running \n")
