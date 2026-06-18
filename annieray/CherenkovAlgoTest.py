@@ -12,21 +12,33 @@ print("CherenkovAlgoTest.py is Running \n __________________________ ")
 #Constants
 c = 299792458 #Speed of light in m/s
 
+xhat = np.array([1,0,0]) #Reference axes
+yhat = np.array([0,1,0])
+zhat = np.array([0,0,1])
+
 #Rounding Function
 def truncate(number, decimals = 0):
     factor = 10 ** decimals
     return math.trunc(number*factor)/factor
 
+#Get Angle function
+def getAngle(a,b):
+    angle = np.arccos(np.dot(a,b) / (np.linalg.norm(a)*np.linalg.norm(b)))
+    return angle
+
+
+
 #User set parameters
-muonDirec = np.array([0,0,1]) # Direction of muon travel as a unit vector | for future implementation, choose muon direction and use it to find the length of track  
 beta = 0.9999 # Speed of the muon as a fraction of the speed of light
 n =1.34 #Refractive index of medium
 muonPath = np.array([0,0,4]) #Total distance traveled by the muon in m
-trackPrec = 2 #control the number of decimal places (in m) that you want for the measurement of the muon track
+trackPrec = 2 #control the number of decimal places (in m) that you want for the measurement of the muon track as well as number of steps in the for loop
 muonStart = np.array([0,0,0,0]) #Set cords for where in the tank the muon starts | x,y,z,t (m),(s)
 
 
 #Begin Cherenkov photon generation algorithm
+muonDirec = muonPath/np.linalg.norm(muonPath) # Direction of muon travel as a unit vector
+
 theta = np.arccos(1/(beta*n)) #Cherenkov angle in radians
 
 LengthTravel = truncate(np.sqrt(muonPath[0]**2+muonPath[1]**2+muonPath[2]**2),trackPrec) #Basic linear muon path approximation, the last variable controls decimal place
@@ -38,6 +50,7 @@ createTime = [] #Initializing a list that will track run time and photon creatio
 muonSpeed = beta*c #Speed of muon in m/s
 #Calculting time delay and recording the generation time of each photon
 timeDelay = ((10**(-trackPrec)) / (beta*c))/(10**-9) # Time delay between photon generation in ns
+
 
 
 #This will write over any previous version of the file every time the code is run
@@ -52,7 +65,7 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
         wavelength = 350 #Wavelngth in nm, will be an array at some point | unincorporated currently
         photonSpeed = c/n #Speed of photon in m/s | Needs to be based on wavelength in the future
 
-        #Cords of muon relative to muon start point 
+        #Cords of muon in the global frame 
         posX = (muonDirec[0])*j*(10**-trackPrec) +muonStart[0]#X cord in m
         posY = (muonDirec[1])*j*(10**-trackPrec)+muonStart[1] #Y cord in m
         posZ = (muonDirec[2])*j*(10**-trackPrec)+muonStart[2] #Z cord in m
@@ -80,25 +93,25 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
             photonZ = photonPos * muonDirec[2] + muonStart[2] #Getting global Z photon cord (m) 
 
             #Finding spatial directions of photon compared to global
-            photonPhi = rng.uniform(0, 2 * np.pi) #Random azimuthal angle for photon emission
-            photonXhat = np.cos(photonPhi) + muonDirec[0]
-            photonYhat = np.sin(photonPhi) + muonDirec[1]
-            photonZhat = np.sin(theta) + muonDirec[2]
+            photonAlpha = rng.uniform(0, 2 * np.pi) #Random azimuthal angle for photon emission
+
+
+
 
             #This is the total photon id, +1 has been added to k to avoid multiple zeros in the photon id
             netK.append(k+(j*150)) 
 
 
-            photonDat.append((photonSegmentID, photonID, createTime[-1], photonXhat, photonYhat, photonZhat, photonX, photonY, photonZ)) # Append photon id, time, and azimuthal angle to list
+            photonDat.append((photonSegmentID, photonID, createTime[-1], xDirec, yDirec, zDirec, photonX, photonY, photonZ)) # Append photon id, time, direction, and position
             
             #This must be in the k for loop in order to work properly 
             #Having a seperate file to view the output is the easiest way to check that the code is running properly
-            file.write(f"{photonSegmentID}, {photonID}, {createTime[-1]}, {photonPhi},{photonXhat},{photonYhat},{photonZhat}, {photonX}, {photonY}, {photonZ}\n") # Write photon id, time, and azimuthal angle to file
+            file.write(f"{photonSegmentID}, {photonID}, {createTime[-1]}, {photonAlpha},{xDirec},{yDirec},{zDirec}, {photonX}, {photonY}, {photonZ}\n") # Write photon id, time, and azimuthal angle to file
 
 
 
         
 #Nice to have
 #print(f"Photon time error is approximately {photonTimeError:.6f}, ns \n")
-print(f"Muon path length in the detector is approximately, {LengthTravel} m\n") 
+print(f"Muon path length is approximately, {LengthTravel} m\n") 
 print("\nCherenkovAlgoTest.py is Finished Running \n")
