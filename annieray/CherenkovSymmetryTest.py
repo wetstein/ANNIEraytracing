@@ -124,9 +124,6 @@ print(f'The original vector is:{goalVec} \n')
 print(f'The original unit vector is: {normGoal}\n')
 
 
-#print(f'The mock photon vector has global cords: {photonVec} \n')
-#print(f'Check photon vector normalized: {photonVecUnitCheck} \n')
-
 
 
 
