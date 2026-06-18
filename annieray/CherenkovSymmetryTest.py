@@ -71,14 +71,14 @@ thetaC = np.deg2rad(42)
 #VECTOR ZERO
 goalVec = np.array([3,2,7]) #Vector you want to align to
 normGoal = goalVec / np.linalg.norm(goalVec)
-photonVecArray = [normGoal] #Start with the normalized goal vector so that it is visible for comparison
-colorArray = ['g']
+photonVecArray = [normGoal] #Start with the normalized goal vector so that it is visible for comparison (this acts as the stand in for the muon direction)
+colorArray = ['g'] #The first color is green so that the "pseudo-muon" direction vector will apear green on the plot
 
 #VECTOR ONE
 goalVec1 = np.array([3,2,7]) #Vector you want to align to
 normGoal1 = goalVec1 / np.linalg.norm(goalVec1)
 photonVecArray1 = [normGoal1] #Same as above but based on different vector
-colorArray1 = ['y']
+colorArray1 = ['y'] #The first color is green so that the "pseudo-muon" will apear yellow on the plot (I think this should make it yellow)
 
     #Generating random vectors based on goalVec with different alpha values 
 for i in range(0,50):
