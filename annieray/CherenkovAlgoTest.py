@@ -12,19 +12,11 @@ print("CherenkovAlgoTest.py is Running \n __________________________ ")
 #Constants
 c = 299792458 #Speed of light in m/s
 
-xhat = np.array([1,0,0]) #Reference axes
-yhat = np.array([0,1,0])
-zhat = np.array([0,0,1])
 
 #Rounding Function
 def truncate(number, decimals = 0):
     factor = 10 ** decimals
     return math.trunc(number*factor)/factor
-
-#Get Angle function
-def getAngle(a,b):
-    angle = np.arccos(np.dot(a,b) / (np.linalg.norm(a)*np.linalg.norm(b)))
-    return angle
 
 #Takes in angles to make coefficients for x,y,z components
 def getComp(thetaC,alpha):
