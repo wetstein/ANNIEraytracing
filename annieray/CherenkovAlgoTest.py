@@ -26,6 +26,62 @@ def getAngle(a,b):
     angle = np.arccos(np.dot(a,b) / (np.linalg.norm(a)*np.linalg.norm(b)))
     return angle
 
+#Takes in angles to make coefficients for x,y,z components
+def getComp(thetaC,alpha):
+    lam = np.sin(thetaC)*np.cos(alpha)
+    kap = np.sin(thetaC)*np.sin(alpha)
+    eta = np.cos(thetaC)
+    return lam,kap,eta
+
+#Takes in a vector and generates two orthonormal vectors as outputs 
+def getBasis(vector):
+    mu1,mu2,mu3 = vector
+    if mu3 !=0: #Prevent division by zero error
+        b1One = 1
+        b1Two = 1
+        b1Three = -(mu1+mu2)/mu3
+
+        b1 = np.array([b1One,b1Two,b1Three])
+        b1 = b1/np.linalg.norm(b1) #Normalizing
+    
+        b2 = np.cross(vector,b1)
+        b2 = b2/np.linalg.norm(b2) #Normalizing
+    elif mu2 != 0: #Prevent division by zero error
+        b1One = 1
+        b1Two = -(mu3+mu1)/mu2
+        b1Three = 1
+
+        b1 = np.array([b1One,b1Two,b1Three])
+        b1 = b1/np.linalg.norm(b1) #Normalizing
+    
+        b2 = np.cross(vector,b1)
+        b2 = b2/np.linalg.norm(b2) #Normalizing
+    elif mu1 != 0: #Prevent division by zero error
+        b1One = -(mu3+mu2)/mu1
+        b1Two = 1
+        b1Three = 1
+
+        b1 = np.array([b1One,b1Two,b1Three])
+        b1 = b1/np.linalg.norm(b1) #Normalizing
+    
+        b2 = np.cross(vector,b1)
+        b2 = b2/np.linalg.norm(b2) #Normalizing 
+    else:
+        print('Non physical vector input: ')
+
+     
+    return b1,b2
+
+#Takes in the vector to generate two orthogonal vectors along with two angles
+#Calls the previous two functions to generate the global photon vector
+def getPhotonVec(vector,thetaC,alpha):
+    b1,b2 = getBasis(vector)
+    lam, kap,eta = getComp(thetaC,alpha)
+    normVector = vector/np.linalg.norm(vector)
+    vector = lam*b1 + kap*b2 + eta*normVector #Photon vector in global cords
+
+    return vector
+
 
 
 #User set parameters
@@ -39,12 +95,12 @@ muonStart = np.array([0,0,0,0]) #Set cords for where in the tank the muon starts
 #Begin Cherenkov photon generation algorithm
 muonDirec = muonPath/np.linalg.norm(muonPath) # Direction of muon travel as a unit vector
 
-theta = np.arccos(1/(beta*n)) #Cherenkov angle in radians
+thetaC = np.arccos(1/(beta*n)) #Cherenkov angle in radians
 
 LengthTravel = truncate(np.sqrt(muonPath[0]**2+muonPath[1]**2+muonPath[2]**2),trackPrec) #Basic linear muon path approximation, the last variable controls decimal place
 i = int(LengthTravel*10**trackPrec) #convert m to the desired precision for use as number of iterations in for loop
 
-photonDat = [] #initializing list to hold photon id, segment generation id, azimuthal angle, etc.
+photonDat = [] #initializing list to hold photon id, segment generation id, global start position, and global direction vectors
 netK = [-1] #Initializing list to hold total k iterations
 createTime = [] #Initializing a list that will track run time and photon creation time
 muonSpeed = beta*c #Speed of muon in m/s
@@ -92,11 +148,9 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
             photonY = photonPos * muonDirec[1] + muonStart[1] #Getting global Y photon cord (m) 
             photonZ = photonPos * muonDirec[2] + muonStart[2] #Getting global Z photon cord (m) 
 
-            #Finding spatial directions of photon compared to global
+            #Finding directional unit vector of photon compared in global frame
             photonAlpha = rng.uniform(0, 2 * np.pi) #Random azimuthal angle for photon emission
-
-
-
+            xDirec, yDirec, zDirec = getPhotonVec(muonDirec,thetaC,photonAlpha)
 
             #This is the total photon id, +1 has been added to k to avoid multiple zeros in the photon id
             netK.append(k+(j*150)) 
@@ -106,7 +160,7 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
             
             #This must be in the k for loop in order to work properly 
             #Having a seperate file to view the output is the easiest way to check that the code is running properly
-            file.write(f"{photonSegmentID}, {photonID}, {createTime[-1]}, {photonAlpha},{xDirec},{yDirec},{zDirec}, {photonX}, {photonY}, {photonZ}\n") # Write photon id, time, and azimuthal angle to file
+            file.write(f"{photonSegmentID}, {photonID}, {createTime[-1]}, {xDirec},{yDirec},{zDirec}, {photonX}, {photonY}, {photonZ}\n") # Write photon id, time, and azimuthal angle to file
 
 
 
