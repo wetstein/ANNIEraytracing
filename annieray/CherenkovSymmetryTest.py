@@ -77,7 +77,7 @@ colorArray = ['g'] #The first color is green so that the "pseudo-muon" direction
 dist = [0]
 
 #VECTOR ONE
-goalVec1 = np.array([3,2,7]) #Vector you want to align to
+goalVec1 = np.array([3,-2,-7]) #Vector you want to align to
 normGoal1 = goalVec1 / np.linalg.norm(goalVec1)
 photonVecArray1 = [normGoal1] #Same as above but based on different vector
 colorArray1 = ['y'] #The first color is green so that the "pseudo-muon" will apear yellow on the plot (I think this should make it yellow)
@@ -107,7 +107,10 @@ for i in range(0,50):
     distance1 = np.linalg.norm(photonVecArray1[0]-photonVecArray1[-1])
     dist1.append(distance1)
 
+
+#Sanity Check
 print(dist)
+print(dist1)
 
 #Plotting here
 origin = [0,0,0]
@@ -125,18 +128,6 @@ ax.set_xlabel('X Axis')
 ax.set_ylabel('y Axis')
 ax.set_zlabel('Z Axis')
 plt.show()
-
-
-
-
-
-#Print statements to check if it is working as intended
-print(f'The original vector is:{goalVec} \n')
-print(f'The original unit vector is: {normGoal}\n')
-
-
-
-
 
 
 print("CherenkovSymmetryTest.py is Done! \n")
