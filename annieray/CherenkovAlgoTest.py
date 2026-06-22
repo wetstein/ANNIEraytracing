@@ -7,6 +7,8 @@ import random as rng
 import math
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.animation as animation
+import pandas as pd
 
 
 print("CherenkovAlgoTest.py is Running \n __________________________ ")
@@ -85,6 +87,11 @@ trackPrec = 2 #control the number of decimal places (in m) that you want for the
 muonStart = np.array([0,0,0,0]) #Set cords for where and when in the tank the muon starts (x,y,z,t) | x,y,z = (m), t = (ns)
 photonNum = 150 #Number of photons generated per cm along track | Need to make accurate later
 
+    #Just for plotting the graphs
+DetectorPlaneDistance = 5 #Only used for the second graph to test code
+j = 1000 #Choosing the number of photons to graph
+
+
 #Begin Cherenkov photon generation algorithm
 muonDirec = muonPath/np.linalg.norm(muonPath) # Direction of muon travel as a unit vector
 
@@ -147,20 +154,23 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
             file.write(f"{photonSegmentID}, {photonID}, {createTime[-1]}, {xDirec},{yDirec},{zDirec}, {photonX}, {photonY}, {photonZ}\n") # Write photon id, time, and azimuthal angle to file
 
 #Plotting section
-j = 15 #Choosing the number of arrows to plot
 
+#The following is for the first graph
 testX = [] #Initialize arrays that will store photon vectors from muon path
 testY = []
 testZ = []
-
 xOrigin = []#Initialize origins 
 yOrigin = []
 zOrigin = []
-
 colorArray = plt.colormaps['coolwarm'](np.linspace(0,1,j))
 
+#The following is for the second graph
+scatterPlotData = [] #Initializing empty list
+
 for k in range(0,j):
-    ranNum = rng.randint(1,60000)
+    ranNum = rng.randint(1,len(photonDat)) #Used to get a random selection of photons
+
+    #For the first plot
     testX.append(LengthTravel*photonDat[ranNum][3]+photonDat[ranNum][6]) #Gets the X component
     testY.append(LengthTravel*photonDat[ranNum][4]+photonDat[ranNum][7]) #Gets the Y component
     testZ.append(LengthTravel*photonDat[ranNum][5]+photonDat[ranNum][8]) #Gets the Z component
@@ -168,28 +178,51 @@ for k in range(0,j):
     xOrigin.append(photonDat[ranNum][6]) #Gets the X origin
     yOrigin.append(photonDat[ranNum][7]) #Gets the Y origin
     zOrigin.append(photonDat[ranNum][8]) #Gets the Z origin
+    
+    #For the Second Plot
+    Lz = DetectorPlaneDistance-zOrigin[-1] #Gets most recent photon's z position and finds distance to detector plane
+    photD = Lz/np.cos(thetaC) #Gets total distance traveled by photon
+    time2Hit = photD/(c/n)+photonDat[ranNum][2] #Time to reach detector plane in ns
+    phi = math.atan2(testY[-1],testX[-1]) % (2*np.pi) #Gets the tan of the photon
 
-#Muon Path
+    photCR = Lz*np.tan(thetaC)
+    xSpot = photCR*np.cos(phi)
+    ySpot = photCR*np.sin(phi)
+    scatterDF = pd.DataFrame({'index' : [k],'xSpot' : xSpot,'ySpot' : ySpot,'time2Hit' : time2Hit}) #Makes the data into a pandas data frame
+    scatterPlotData.append(scatterDF)#Appends data as a pandas data frame
+
+#Muon Path | Graph One
 U,V,W = muonPath
 x, y, z = 0,0,0
 testZ.sort() #Arranges z to be in ascending order so that the color map works
 zOrigin.sort() #Arranges the origin in ascending order to match the above line
 
-fig = plt.figure()
-ax = fig.add_subplot(111,projection='3d')
-ax.quiver(xOrigin,yOrigin,zOrigin,testX,testY,testZ, color = colorArray)
-ax.quiver(x,y,z,U,V,W, color = 'g')
-ax.set_xlabel('X Axis')
-ax.set_ylabel('y Axis')
-ax.set_zlabel('Z Axis')
-ax.set_xlim([-2,5])
-ax.set_ylim([-2,5])
-ax.set_zlim([-2,5])
+fig1 = plt.figure()
+ax1 = fig1.add_subplot(111,projection='3d')
+ax1.quiver(xOrigin,yOrigin,zOrigin,testX,testY,testZ, color = colorArray)
+ax1.quiver(x,y,z,U,V,W, color = 'g')
+ax1.set_xlabel('X Axis')
+ax1.set_ylabel('y Axis')
+ax1.set_zlabel('Z Axis')
+ax1.set_xlim([-2,5])
+ax1.set_ylim([-2,5])
+ax1.set_zlim([-2,5])
 
+
+#Graph Two
+scatterDatDF = pd.concat(scatterPlotData) #Full data frame version of the generated data
+sortedScatterDat = scatterDatDF.sort_values(by = 'time2Hit', ascending = False) #Puts the data into a descending order
+sortedScatterDat.plot.scatter(x= 'xSpot', y = 'ySpot', color = colorArray)
+
+#Allows for all entries of the dataframe to be seen with a print statement
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+print(sortedScatterDat)
+
+
+#Show both graphs
 plt.show()
 
 
-print(photonDat[1])
-print(photonDat[1][2])
 print(f"Muon path length is approximately, {LengthTravel} m\n") 
 print("\nCherenkovAlgoTest.py is Finished Running \n")
