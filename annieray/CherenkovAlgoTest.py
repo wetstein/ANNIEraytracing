@@ -146,6 +146,50 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
             #Having a seperate file to view the output is the easiest way to check that the code is running properly
             file.write(f"{photonSegmentID}, {photonID}, {createTime[-1]}, {xDirec},{yDirec},{zDirec}, {photonX}, {photonY}, {photonZ}\n") # Write photon id, time, and azimuthal angle to file
 
+#Plotting section
+j = 15 #Choosing the number of arrows to plot
 
+testX = [] #Initialize arrays that will store photon vectors from muon path
+testY = []
+testZ = []
+
+xOrigin = []#Initialize origins 
+yOrigin = []
+zOrigin = []
+
+colorArray = plt.colormaps['coolwarm'](np.linspace(0,1,j))
+
+for k in range(0,j):
+    ranNum = rng.randint(1,60000)
+    testX.append(LengthTravel*photonDat[ranNum][3]+photonDat[ranNum][6]) #Gets the X component
+    testY.append(LengthTravel*photonDat[ranNum][4]+photonDat[ranNum][7]) #Gets the Y component
+    testZ.append(LengthTravel*photonDat[ranNum][5]+photonDat[ranNum][8]) #Gets the Z component
+
+    xOrigin.append(photonDat[ranNum][6]) #Gets the X origin
+    yOrigin.append(photonDat[ranNum][7]) #Gets the Y origin
+    zOrigin.append(photonDat[ranNum][8]) #Gets the Z origin
+
+#Muon Path
+U,V,W = muonPath
+x, y, z = 0,0,0
+testZ.sort() #Arranges z to be in ascending order so that the color map works
+zOrigin.sort() #Arranges the origin in ascending order to match the above line
+
+fig = plt.figure()
+ax = fig.add_subplot(111,projection='3d')
+ax.quiver(xOrigin,yOrigin,zOrigin,testX,testY,testZ, color = colorArray)
+ax.quiver(x,y,z,U,V,W, color = 'g')
+ax.set_xlabel('X Axis')
+ax.set_ylabel('y Axis')
+ax.set_zlabel('Z Axis')
+ax.set_xlim([-2,5])
+ax.set_ylim([-2,5])
+ax.set_zlim([-2,5])
+
+plt.show()
+
+
+print(photonDat[1])
+print(photonDat[1][2])
 print(f"Muon path length is approximately, {LengthTravel} m\n") 
 print("\nCherenkovAlgoTest.py is Finished Running \n")
