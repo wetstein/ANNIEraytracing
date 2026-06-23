@@ -110,7 +110,7 @@ timeDelay = ((10**(-trackPrec)) / (beta*c))/(10**-9) # Time delay between photon
 
 #This will write over any previous version of the file every time the code is run
 with open("CherenkovAlgoTestData.txt", "w") as file:
-    file.write("NOT FOR USE IN ANY PART OF THE CODE OR ANALYSIS \n Segment ID, Photon ID, Time of Creation (ns), Global Xhat, Global Yhat, Global Zhat, Global X (m), Global Y (m), Global Z (m)\n") # Write header to file   
+    file.write("NOT FOR USE IN ANY PART OF THE CODE OR ANALYSIS \n Segment ID, Photon ID, Time of Creation (ns), Global Xhat, Global Yhat, Global Zhat, Global X (m), Global Y (m), Global Z (m), Wavelength (nm) \n") # Write header to file   
     #Generating one photon per unit length along the track
     for j in range(i+1): #+1 to include the end point of the track as well as the zeroth point where the first photon is generated (actually a nice case of 0 indexing working in favor)        
         photonSegmentID = j+1 #This is the ID for the segment of the track where the photon is generated
@@ -135,6 +135,9 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
             #Generate photon ID
             photonID = netK[-1]+2 #Should be the only line required to assign the id
 
+            #Wavelength Array
+            photWave = 350 #Placeholder wavlength (nm)
+
             #Finding photon position in global
             photonX = photonPos * muonDirec[0] + muonStart[0] #Getting global X photon cord (m) 
             photonY = photonPos * muonDirec[1] + muonStart[1] #Getting global Y photon cord (m) 
@@ -147,11 +150,11 @@ with open("CherenkovAlgoTestData.txt", "w") as file:
             #This is the total photon id, +1 has been added to k to avoid multiple zeros in the photon id
             netK.append(k+(j*150)) 
 
-            photonDat.append((photonSegmentID, photonID, createTime[-1], xDirec, yDirec, zDirec, photonX, photonY, photonZ)) # Append photon id, time, direction, and position
+            photonDat.append((photonSegmentID, photonID, createTime[-1], xDirec, yDirec, zDirec, photonX, photonY, photonZ, photWave)) # Append photon id, time, direction, and position
             
             #This must be in the k for loop in order to work properly 
             #Having a seperate file to view the output is the easiest way to check that the code is running properly
-            file.write(f"{photonSegmentID}, {photonID}, {createTime[-1]}, {xDirec},{yDirec},{zDirec}, {photonX}, {photonY}, {photonZ}\n") # Write photon id, time, and azimuthal angle to file
+            file.write(f"{photonSegmentID}, {photonID}, {createTime[-1]}, {xDirec},{yDirec},{zDirec}, {photonX}, {photonY}, {photonZ}, {photWave}\n") # Write photon id, time, and azimuthal angle to file
 
 #Plotting section
 

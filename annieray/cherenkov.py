@@ -1,119 +1,165 @@
-"""Cherenkov photon generation for muon tracks in water.
-
-This module is the single place where photon emission is modelled.
-Currently implements a simple single-vertex Cherenkov cone.
-
-TO EXTEND THE EMISSION MODEL (student task):
-  - Add muon propagation along the track (distribute origins along Z)
-  - Add wavelength-dependent Cherenkov angle via dispersion curve n(λ)
-  - Add per-photon wavelength sampling (return wavelengths array)
-  - Add delta-ray or scintillation components
-
-The output (origins, directions) is consumed by trace_rays() in tracer.py,
-which runs the GPU kernel.  Optionally a wavelengths array can be returned
-and threaded through trace_cherenkov() to fill the hits[:, 14] column.
-"""
+#DO NOT USE THIS FILE FOR ANY SIMULATION WORK
+#DO NOT USE THE CORRESPONDING DATA txt FILE FOR ANY ANALYSIS
+#This file is only for testing the basic Cherenkov algorithm and generating data to compare against 
 
 import numpy as np
+import random as rng
+import math
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.animation as animation
+import pandas as pd
 
-# Nominal Cherenkov angle for n_water = 1.34 at ~350 nm
-#   cos(θ_c) = 1 / (n * β)  →  θ_c ≈ arccos(1/1.34) ≈ 0.73 rad ≈ 42°
-CHERENKOV_ANGLE = 0.73
 
-# Default wavelength when no per-photon sampling is used (nm)
-DEFAULT_WAVELENGTH = 350.0
+print("CherenkovAlgoTest.py is Running \n __________________________ ")
 
+#Constants
+c = 299792458 #Speed of light in m/s
 
-def generate_cherenkov_photons(
-    muon_pos: tuple[float, float, float],
-    muon_dir: tuple[float, float, float],
-    #Adding in array of wavelengths | Unused currently but will replace the current DEFAULT_WAVELENGTH
-    # WaveLengths = np.linspace(10,1400, num = 100) #nm from UV to IR, low spacing for now to reduce computaional load
-    n: int,
-    cherenkov_angle: float = CHERENKOV_ANGLE,
-    rng: np.random.Generator | None = None,
-    wavelength: float = DEFAULT_WAVELENGTH,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Generate Cherenkov cone photons from a muon track.
+#Rounding Function
+def truncate(number, decimals = 0):
+    factor = 10 ** decimals
 
-    All photons originate at a single vertex (muon_pos) and are emitted
-    uniformly within a filled cone of half-angle cherenkov_angle around
-    muon_dir.
+    return math.trunc(number*factor)/factor
 
-    Args:
-        muon_pos: Muon vertex (x, y, z) in mm.
-        muon_dir: Muon direction (does not need to be unit).
-        n: Number of photons to generate.
-        cherenkov_angle: Cherenkov angle in radians.
-        rng: NumPy random generator.
-        wavelength: Photon wavelength in nm (default 350).
+#Takes in angles to make coefficients for x,y,z components
+def getComp(thetaC,alpha):
+    lam = np.sin(thetaC)*np.cos(alpha)
+    kap = np.sin(thetaC)*np.sin(alpha)
+    eta = np.cos(thetaC)
 
-    Returns:
-        (origins, directions) arrays, each (N, 3) float32.
-    """
-    if rng is None:
-        rng = np.random.default_rng()
+    return lam,kap,eta
 
-    # ---- Normalise muon direction to unit vector ----
-    mdx, mdy, mdz = muon_dir
-    m_len = np.sqrt(mdx * mdx + mdy * mdy + mdz * mdz)
-    mdx /= m_len
-    mdy /= m_len
-    mdz /= m_len
+#Takes in a vector and generates two orthonormal vectors as outputs 
+def getBasis(vector):
+    mu1,mu2,mu3 = vector
+    if mu3 !=0: #Prevent division by zero error
+        b1One = 1
+        b1Two = 1
+        b1Three = -(mu1+mu2)/mu3
 
-    # ---- Build two orthonormal basis vectors (v, w) perpendicular to muon_dir ----
-    # We need an arbitrary vector not parallel to muon_dir to start the cross product.
-    # If muon_dir is nearly along X, use Y as reference; otherwise use X.
-    if abs(mdx) > 0.9:
-        ref_x, ref_y, ref_z = 0.0, 1.0, 0.0   # reference = Y axis
+        b1 = np.array([b1One,b1Two,b1Three])
+        b1 = b1/np.linalg.norm(b1) #Normalizing
+    
+        b2 = np.cross(vector,b1)
+        b2 = b2/np.linalg.norm(b2) #Normalizing
+    elif mu2 != 0: #Prevent division by zero error
+        b1One = 1
+        b1Two = -(mu3+mu1)/mu2
+        b1Three = 1
+
+        b1 = np.array([b1One,b1Two,b1Three])
+        b1 = b1/np.linalg.norm(b1) #Normalizing
+    
+        b2 = np.cross(vector,b1)
+        b2 = b2/np.linalg.norm(b2) #Normalizing
+    elif mu1 != 0: #Prevent division by zero error
+        b1One = -(mu3+mu2)/mu1
+        b1Two = 1
+        b1Three = 1
+
+        b1 = np.array([b1One,b1Two,b1Three])
+        b1 = b1/np.linalg.norm(b1) #Normalizing
+    
+        b2 = np.cross(vector,b1)
+        b2 = b2/np.linalg.norm(b2) #Normalizing 
     else:
-        ref_x, ref_y, ref_z = 1.0, 0.0, 0.0   # reference = X axis
+        print('Non physical vector input: ')
+     
+    return b1,b2
 
-    # v = cross(muon_dir, reference), then normalise
-    # v is the first basis vector in the plane perpendicular to muon_dir
-    vx = ref_y * mdz - ref_z * mdy
-    vy = ref_z * mdx - ref_x * mdz
-    vz = ref_x * mdy - ref_y * mdx
-    v_len = np.sqrt(vx * vx + vy * vy + vz * vz)
-    vx /= v_len
-    vy /= v_len
-    vz /= v_len
+#Takes in the vector to generate two orthogonal vectors along with two angles
+#Calls the previous two functions to generate the global photon vector
+def getPhotonVec(vector,thetaC,alpha):
+    b1,b2 = getBasis(vector)
+    lam, kap,eta = getComp(thetaC,alpha)
+    normVector = vector/np.linalg.norm(vector)
+    vector = lam*b1 + kap*b2 + eta*normVector #Photon vector in global cords
 
-    # w = cross(muon_dir, v)
-    # w is the second basis vector, orthogonal to both muon_dir and v
-    wx = mdy * vz - mdz * vy
-    wy = mdz * vx - mdx * vz
-    wz = mdx * vy - mdy * vx
-    # w is already unit since v and muon_dir are unit and orthogonal
+    return vector
 
-    # ---- Generate random angles on the Cherenkov cone ----
-    # phi: random azimuth around the muon direction (full circle)
-    phi = rng.uniform(0, 2 * np.pi, n)
-    # theta: random polar angle within the cone (filled cone, not just
-    # the cone surface).  For a thin Cherenkov ring, sample near a fixed
-    # angle instead of [0, cherenkov_angle].
-    theta = cherenkov_angle #This should be the way to simulate only the Cherenkov Angle for a single muon rather than a filled cone, but the visual model still shows a cone
-    cos_theta = np.cos(theta)
-    sin_theta = np.sin(theta)
 
-    # ---- Build photon direction vectors ----
-    # Each photon direction = muon_dir * cosθ + (v * cosφ + w * sinφ) * sinθ
-    #   - muon_dir * cosθ  →  component along the muon track
-    #   - (v*cosφ + w*sinφ) * sinθ  →  perpendicular component, with
-    #     random azimuth φ choosing the position around the cone
-    origins = np.empty((n, 3), dtype=np.float32)
-    directions = np.empty((n, 3), dtype=np.float32)
+#User set default parameters
+beta = 0.999999 # Speed of the muon as a fraction of the speed of light
+n =1.34 #Refractive index of medium
+muonPath = np.array([0,0,4]) #Total distance traveled by the muon in m
+trackPrec = 2 #control the step size of the track (currently cm steps along track)
+muonStart = np.array([0,0,0,0]) #Set cords for where and when in the tank the muon starts (x,y,z,t) | x,y,z = (m), t = (ns)
+photonNum = 150 #Number of photons generated per cm along track | Need to make accurate later
 
-    # All photons currently start at the same vertex.
-    # TODO: propagate muon along track and distribute emission points.
-    origins[:, 0] = muon_pos[0]
-    origins[:, 1] = muon_pos[1]
-    origins[:, 2] = muon_pos[2]
+#Begin Cherenkov photon generation algorithm
+muonDirec = muonPath/np.linalg.norm(muonPath) # Default direction of muon travel as a unit vector
+thetaC = np.arccos(1/(beta*n)) #Default Cherenkov angle in radians
 
-    sp = np.sin(phi)
-    cp = np.cos(phi)
-    directions[:, 0] = mdx * cos_theta + (vx * cp + wx * sp) * sin_theta
-    directions[:, 1] = mdy * cos_theta + (vy * cp + wy * sp) * sin_theta
-    directions[:, 2] = mdz * cos_theta + (vz * cp + wz * sp) * sin_theta
+LengthTravel = truncate(np.sqrt(muonPath[0]**2+muonPath[1]**2+muonPath[2]**2),trackPrec) #Default linear muon path approximation, the last variable controls decimal place
+defaultWavelength = 1234 #Just here because the original file has a singular specified wavelength
+def generate_cherenkov_photons(
+    muonStart: tuple = muonStart,
+    muonDirec: tuple = muonDirec,
+    photonNum: int = photonNum,
+    thetaC: float = thetaC,
+    rng: np.random.Generator | None=None, #Only here because the original has it here
+    wavelength: float = defaultWavelength #Only here because the original has it here
+    ) -> tuple[np.ndarray,np.ndarray]:
+    i = int(LengthTravel*10**trackPrec) #convert m to the desired precision for use as number of iterations in for loop
+    photonDat = [] #initializing list to hold photon id, segment generation id, global start position, and global direction vectors
+    netK = [-1] #Initializing list to hold total k iterations
+    createTime = [] #Initializing a list that will track run time and photon creation time
+    muonSpeed = beta*c #Speed of muon in m/s
+    #Calculting time delay and recording the generation time of each photon
+    timeDelay = ((10**(-trackPrec)) / (beta*c))/(10**-9) # Time delay between photon generation in ns
+    
+    muonPath = muonDirec*LengthTravel #specified muon path
 
+    for j in range(i+1): #+1 to include the end point of the track as well as the zeroth point where the first photon is generated (actually a nice case of 0 indexing working in favor)        
+        photonSegmentID = j+1 #This is the ID for the segment of the track where the photon is generated
+
+        #Cords of muon in the global frame 
+        posX = (muonDirec[0])*j*(10**-trackPrec) +muonStart[0]#X cord in m
+        posY = (muonDirec[1])*j*(10**-trackPrec)+muonStart[1] #Y cord in m
+        posZ = (muonDirec[2])*j*(10**-trackPrec)+muonStart[2] #Z cord in m
+        timeMuon = j*timeDelay+muonStart[3] #This is the muon time (s)
+        #print('Photon Generation Event:',j, '\n') #Nice to have some way of measuring progress is happening
+        
+        #Generate photonNum photons per unit length along the track and perform any necessary calculations
+        for k in range(photonNum): 
+
+            #Run spatial probability of photon generation
+            photonProb = rng.uniform(0,1)
+            photonPos = j*(10**-trackPrec)+photonProb*(10**-trackPrec) #Position of photon along track in m
+            
+            #Calculate photon creation time in ns from some given start time | Remember the start time is defined in seconds
+            createTime.append(((photonPos)/(muonSpeed)+muonStart[3])*(10**9))
+
+            #Generate photon ID
+            photonID = netK[-1]+2 #Should be the only line required to assign the id
+
+            #Wavelength Array
+            photWave = rng.randint(10,1400) #nm from UV to IR
+
+            #Finding photon position in global
+            photonX = photonPos * muonDirec[0] + muonStart[0] #Getting global X photon cord (m) 
+            photonY = photonPos * muonDirec[1] + muonStart[1] #Getting global Y photon cord (m) 
+            photonZ = photonPos * muonDirec[2] + muonStart[2] #Getting global Z photon cord (m) 
+
+            #Finding directional unit vector of photon compared in global frame
+            photonAlpha = rng.uniform(0, 2 * np.pi) #Random azimuthal angle for photon emission
+            xDirec, yDirec, zDirec = getPhotonVec(muonDirec,thetaC,photonAlpha)
+
+            #This is the total photon id, +1 has been added to k to avoid multiple zeros in the photon id
+            netK.append(k+(j*150)) 
+
+            photonDat.append((photonSegmentID, photonID, createTime[-1], xDirec, yDirec, zDirec, photonX, photonY, photonZ, photWave)) # Append photon id, time, direction, and position
+    #Initialize lists and assign data
+    origins = np.empty((photonNum,3),dtype=np.float32) 
+    directions = np.empty((photonNum,3),dtype=np.float32) 
+    
+    origins[:,0] = [row[6] for row in photonDat]
+    origins[:,1] = [row[7] for row in photonDat]
+    origins[:,2] = [row[8] for row in photonDat]
+
+    directions[:,0] = [row[3] for row in photonDat]
+    directions[:,1] = [row[4] for row in photonDat]
+    directions[:,2] = [row[5] for row in photonDat]
     return origins, directions
+#print('Cherenkov.py is finished')
