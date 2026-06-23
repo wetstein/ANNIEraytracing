@@ -79,25 +79,24 @@ def getPhotonVec(vector,thetaC,alpha):
 #User set default parameters
 beta = 0.999999 # Speed of the muon as a fraction of the speed of light
 n =1.34 #Refractive index of medium
-muonPath = np.array([0,0,4]) #Total distance traveled by the muon in m
 trackPrec = 2 #control the step size of the track (currently cm steps along track)
-muonStart = np.array([0,0,0,0]) #Set cords for where and when in the tank the muon starts (x,y,z,t) | x,y,z = (m), t = (ns)
-photonNum = 150 #Number of photons generated per cm along track | Need to make accurate later
-
-#Begin Cherenkov photon generation algorithm
-muonDirec = muonPath/np.linalg.norm(muonPath) # Default direction of muon travel as a unit vector
-thetaC = np.arccos(1/(beta*n)) #Default Cherenkov angle in radians
-
-LengthTravel = truncate(np.sqrt(muonPath[0]**2+muonPath[1]**2+muonPath[2]**2),trackPrec) #Default linear muon path approximation, the last variable controls decimal place
+photonNum = 150 #Default number of photons generated per cm along track 
+LengthTravel = 4
 defaultWavelength = 1234 #Just here because the original file has a singular specified wavelength
 def generate_cherenkov_photons(
-    muonStart: tuple = muonStart,
-    muonDirec: tuple = muonDirec,
-    photonNum: int = photonNum,
-    thetaC: float = thetaC,
+    muon_pos,
+    muonDirec,
+    photonNumUnused,
+    thetaC: float = 0.73,
     rng: np.random.Generator | None=None, #Only here because the original has it here
     wavelength: float = defaultWavelength #Only here because the original has it here
     ) -> tuple[np.ndarray,np.ndarray]:
+    #If no start time is given make it a 
+    if len(muon_pos) != 4:
+        muonStart = tuple([muon_pos[0],muon_pos[1],muon_pos[2],0])
+    else:
+        muonStart = muon_pos
+
     i = int(LengthTravel*10**trackPrec) #convert m to the desired precision for use as number of iterations in for loop
     photonDat = [] #initializing list to hold photon id, segment generation id, global start position, and global direction vectors
     netK = [-1] #Initializing list to hold total k iterations
@@ -115,7 +114,7 @@ def generate_cherenkov_photons(
         posX = (muonDirec[0])*j*(10**-trackPrec) +muonStart[0]#X cord in m
         posY = (muonDirec[1])*j*(10**-trackPrec)+muonStart[1] #Y cord in m
         posZ = (muonDirec[2])*j*(10**-trackPrec)+muonStart[2] #Z cord in m
-        timeMuon = j*timeDelay+muonStart[3] #This is the muon time (s)
+        timeMuon = j*timeDelay+muonStart[3]*(10**-9) #This is the muon time (s)
         #print('Photon Generation Event:',j, '\n') #Nice to have some way of measuring progress is happening
         
         #Generate photonNum photons per unit length along the track and perform any necessary calculations
@@ -132,7 +131,7 @@ def generate_cherenkov_photons(
             photonID = netK[-1]+2 #Should be the only line required to assign the id
 
             #Wavelength Array
-            photWave = rng.randint(10,1400) #nm from UV to IR
+            photWave = 234 #nm from UV to IR
 
             #Finding photon position in global
             photonX = photonPos * muonDirec[0] + muonStart[0] #Getting global X photon cord (m) 
