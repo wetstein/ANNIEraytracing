@@ -135,7 +135,7 @@ def _generate_cherenkov(
     geometry: Geometry,
     n: int,
     rng: np.random.Generator,
-    muon_pos: tuple = (0.0, 0.0, 2000.0), #Tank coordinate system (cartesian based on the cylinder) where z is height
+    muon_pos: tuple = (0.0, 0.0, 2000.0,0.0), #Tank coordinate system (cartesian based on the cylinder) where z is height, the last component is time in ns
     muon_dir: tuple = (0.0, 0.0, -1.0),
     cherenkov_angle: float = 0.73,
 ) -> tuple:

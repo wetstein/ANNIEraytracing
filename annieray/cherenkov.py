@@ -106,7 +106,7 @@ def generate_cherenkov_photons(
     #Calculting time delay and recording the generation time of each photon
     timeDelay = ((10**(-trackPrec)) / (beta*c))/(10**-9) # Time delay between photon generation in ns
     
-    muonPath = muonDirec*LengthTravel #specified muon path
+    muonPath = tuple(x*LengthTravel for x in muonDirec) #specified muon path
 
     for j in range(i+1): #+1 to include the end point of the track as well as the zeroth point where the first photon is generated (actually a nice case of 0 indexing working in favor)        
         photonSegmentID = j+1 #This is the ID for the segment of the track where the photon is generated
