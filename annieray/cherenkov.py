@@ -1,6 +1,3 @@
-#DO NOT USE THIS FILE FOR ANY SIMULATION WORK
-#DO NOT USE THE CORRESPONDING DATA txt FILE FOR ANY ANALYSIS
-#This file is only for testing the basic Cherenkov algorithm and generating data to compare against 
 
 import numpy as np
 import random as rng
@@ -130,8 +127,8 @@ def generate_cherenkov_photons(
             #Generate photon ID
             photonID = netK[-1]+2 #Should be the only line required to assign the id
 
-            #Wavelength Array
-            photWave = 234 #nm from UV to IR
+            #Wavelength placeholder
+            photWave = 234 #placeholder
 
             #Finding photon position in global
             photonX = photonPos * muonDirec[0] + muonStart[0] #Getting global X photon cord (m) 
