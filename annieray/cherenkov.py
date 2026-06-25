@@ -131,9 +131,9 @@ def generate_cherenkov_photons(
             photWave = 234 #placeholder
 
             #Finding photon position in global
-            photonX = photonPos * muonDirec[0] + muonStart[0] #Getting global X photon cord (m) 
-            photonY = photonPos * muonDirec[1] + muonStart[1] #Getting global Y photon cord (m) 
-            photonZ = photonPos * muonDirec[2] + muonStart[2] #Getting global Z photon cord (m) 
+            photonX = photonPos * muonDirec[0]*1000 + muonStart[0] #Getting global X photon cord (m) 
+            photonY = photonPos * muonDirec[1]*1000 + muonStart[1] #Getting global Y photon cord (m) 
+            photonZ = photonPos * muonDirec[2]*1000 + muonStart[2] #Getting global Z photon cord (m) 
 
             #Finding directional unit vector of photon compared in global frame
             photonAlpha = rng.uniform(0, 2 * np.pi) #Random azimuthal angle for photon emission
