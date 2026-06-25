@@ -147,8 +147,8 @@ def generate_cherenkov_photons(
 
             photonDat.append((photonSegmentID, photonID, createTime[-1], xDirec, yDirec, zDirec, photonX, photonY, photonZ, photWave)) # Append photon id, time, direction, and position
     #Initialize lists and assign data
-    origins = np.empty((photonNum,3),dtype=np.float32) 
-    directions = np.empty((photonNum,3),dtype=np.float32) 
+    origins = np.empty((photonNum*(i+1),3),dtype=np.float32) 
+    directions = np.empty((photonNum*(i+1),3),dtype=np.float32) 
     
     origins[:,0] = [row[6] for row in photonDat]
     origins[:,1] = [row[7] for row in photonDat]
