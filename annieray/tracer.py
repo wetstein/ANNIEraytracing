@@ -984,7 +984,7 @@ def trace_cherenkov(
     if rng is None:
         rng = np.random.default_rng()
 
-    origins, directions = generate_cherenkov_photons(
+    origins, directions, creationTime = generate_cherenkov_photons(
         muon_pos, muon_dir, n_photons, rng=rng,
     )
     hits = trace_rays(origins, directions, geometry)
@@ -1014,6 +1014,6 @@ def trace_cherenkov(
     c_in_water = C_MM_NS / n_water
     hit_mask = hits[:, HI] > 0.5
     if hit_mask.any():
-        full[hit_mask, N_HIT_COLS] = hits[hit_mask, HT] / c_in_water
+        full[hit_mask, N_HIT_COLS] = hits[hit_mask, HT] / c_in_water #+ creationTime <- This needs to have a way to call back to what photons actually hit and then find their creation time
 
     return full
