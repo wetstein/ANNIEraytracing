@@ -14,6 +14,7 @@ from annieray.tracer import (
     trace_cherenkov,
     Geometry,
 )
+from annieray.optics import load_optics_config
 from annieray.output import write_hits, write_detector_config
 
 
@@ -48,6 +49,10 @@ def build_parser() -> argparse.ArgumentParser:
                      help="Photon wavelength in nm (default: 350)")
     run.add_argument("--det-rotation", type=float, default=22.5,
                      help="Global Z-rotation (deg) so +Y aligns with octagon corner (default: 22.5)")
+    run.add_argument("--max-bounces", type=int, default=0,
+                     help="Number of surface reflections per photon (0 = off, default: 0)")
+    run.add_argument("--optics-config", type=Path, default=None,
+                     help="YAML file with per-material optical properties (default: built-in)")
 
     cherenkov = sub.add_parser("extract-manifest", help="Extract component manifest from STEP")
     cherenkov.add_argument("--step", required=True, type=Path, help="Path to STEP CAD file")
@@ -204,16 +209,22 @@ def run_command(args: argparse.Namespace) -> None:
 
     rng = np.random.default_rng(args.seed)
 
+    if args.max_bounces > 0 and args.mode == "cherenkov":
+        print(f"\nMulti-bounce optics enabled: max {args.max_bounces} reflections per photon")
+
     print(f"\nGenerating {args.photons} photons ({args.mode} mode)...")
     t0 = time.time()
     if args.mode == "uniform":
         origins, directions = _generate_uniform(geom, args.photons, rng)
         hits = trace_rays(origins, directions, geom)
     else:
+        optics_cfg = load_optics_config(args.optics_config) if args.max_bounces > 0 else None
         hits = trace_cherenkov(
             (0.0, 0.0, 2000.0), (0.0, 0.0, -1.0),
             args.photons, geom, rng=rng,
             wavelength_nm=args.wavelength,
+            max_bounces=args.max_bounces,
+            optics_config=optics_cfg,
         )
     t_gen = time.time() - t0
     print(f"  Generated/traced in {t_gen:.2f}s")

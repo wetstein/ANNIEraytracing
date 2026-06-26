@@ -17,8 +17,10 @@ component_manifest.json
 *.step
 *.stp
 
-# Generated GDML meshes
-pmt_meshes/
+# Large / generated GDML meshes (raw source files — not needed at runtime)
+pmt_meshes/*.gdml
+pmt_meshes/pmt_assembly_*
+pmt_meshes/pmt_metadata.json
 PHASE2_INNER_STRUCTURE_closed.gdml
 
 # Scratch scripts

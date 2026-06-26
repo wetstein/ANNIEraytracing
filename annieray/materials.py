@@ -24,6 +24,7 @@ class MaterialID(IntEnum):
     TEFLON = 4          # Inner structure white covering, 8" PMT holders
     ACRYLIC = 5         # 10" PMT holders, LAPPD window
     STEEL = 6           # Inner structure frame
+    BLACK_SHEET = 7     # Black tank liner / light-tight barrier
 
 
 @dataclass
@@ -45,6 +46,7 @@ MATERIAL_TABLE: dict[MaterialID, MaterialProps] = {
     MaterialID.TEFLON:       MaterialProps(color=(0.95, 0.95, 0.92), is_sensitive=False),
     MaterialID.ACRYLIC:      MaterialProps(color=(0.88, 0.90, 0.94), is_sensitive=False),
     MaterialID.STEEL:        MaterialProps(color=(0.50, 0.50, 0.52), is_sensitive=False),
+    MaterialID.BLACK_SHEET:  MaterialProps(color=(0.02, 0.02, 0.02), is_sensitive=False),
 }
 
 
