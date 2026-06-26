@@ -18,10 +18,9 @@ component_manifest.json
 *.stp
 
 # Large / generated GDML meshes (raw source files — not needed at runtime)
-pmt_meshes/*.gdml
+*.gdml
 pmt_meshes/pmt_assembly_*
 pmt_meshes/pmt_metadata.json
-PHASE2_INNER_STRUCTURE_closed.gdml
 
 # Scratch scripts
 analyze_step.py
