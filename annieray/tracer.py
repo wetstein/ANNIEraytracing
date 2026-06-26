@@ -223,7 +223,16 @@ def build_geometry(
       6. Build the detector registry (stable ID → DetectorInfo mapping).
     """
     # ---- Stage 1: parse the GDML structure mesh ----
-    verts, tris = gdml_parser.parse_gdml(gdml_path)
+    # Prefer a pre-built .npz cache (fast, no XML parsing).
+    cache_path = gdml_path.with_suffix(".npz").with_name(
+        gdml_path.stem + "_cache.npz"
+    )
+    if cache_path.exists():
+        data = np.load(cache_path)
+        verts, tris = data["vertices"], data["triangles"]
+        print(f"  Structure mesh: {len(verts)} verts, {len(tris)} tris (cached)")
+    else:
+        verts, tris = gdml_parser.parse_gdml(gdml_path)
     if det_rotation_deg != 0.0 and verts.shape[0] > 0:
         pmt_loader.rotate_z(verts, det_rotation_deg)
 

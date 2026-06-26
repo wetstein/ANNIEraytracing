@@ -63,8 +63,28 @@ def _compute_bounding_radius(vertices: np.ndarray) -> float:
     return float(np.max(np.linalg.norm(vertices, axis=1))) + 1.0
 
 
+def _load_body_mesh_from_cache(mi: int, gn: str, tn: str) -> PMTMeshData | None:
+    """Load a pre-built body mesh from ``_body_cache.npz``, or None."""
+    cache_name = gn.replace(".gdml", "_body_cache.npz")
+    p = MESH_DIR / cache_name
+    if not p.exists():
+        return None
+    data = np.load(p)
+    verts = data["vertices"]
+    mat_ids = data["material_ids"]
+    bradius = float(data["bounding_radius"])
+    n_tris = len(verts) // 3
+    print(f"  PMT body mesh {mi} ({tn}): {n_tris} tris (cached), "
+          f"bounding radius {bradius:.1f} mm")
+    return PMTMeshData(vertices=verts, material_ids=mat_ids,
+                       bounding_radius=bradius, n_tris=n_tris)
+
+
 def load_pmt_body_meshes() -> dict[int, PMTMeshData]:
     """Load all 4 PMT body meshes and classify per-triangle materials.
+
+    Prefers pre-built ``_body_cache.npz`` files (fast, no GDML parsing).
+    Falls back to parsing raw GDML.
 
     Cached internally — second call is a no-op.
 
@@ -79,6 +99,11 @@ def load_pmt_body_meshes() -> dict[int, PMTMeshData]:
 
     result: dict[int, PMTMeshData] = {}
     for mi, gn, rc, tn in PMT_BODY_SPECS:
+        cached = _load_body_mesh_from_cache(mi, gn, tn)
+        if cached is not None:
+            result[mi] = cached
+            continue
+
         p = MESH_DIR / gn
         if not p.exists():
             print(f"  PMT mesh {mi} ({gn}): NOT FOUND")
