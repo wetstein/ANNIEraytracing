@@ -420,7 +420,7 @@ class VizHandler(BaseHTTPRequestHandler):
             dx = float(params.get("dx", ["0"])[0])
             dy = float(params.get("dy", ["0"])[0])
             dz = float(params.get("dz", ["-1"])[0])
-            n = int(params.get("n", ["10000"])[0])
+            n = int(params.get("n", ["150"])[0])
             n = min(max(n, 100), 1_000_000)
         except (ValueError, TypeError):
             self._send_json({"error": "invalid parameters"}, 400)
@@ -897,7 +897,7 @@ async function doTrace() {
     const dx = Math.sin(theta) * Math.cos(phi);
     const dy = Math.sin(theta) * Math.sin(phi);
     const dz = Math.cos(theta);
-    const n = 10000;
+    const n = 150;
 
     const btn = document.getElementById('traceBtn');
     btn.disabled = true;
