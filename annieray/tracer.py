@@ -1547,7 +1547,7 @@ def trace_with_optics(
     max_bounces: int = 3,
     n_water: float = N_WATER_DEFAULT,
     rng: np.random.Generator | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Trace rays with multi-bounce optical surface physics.
 
     Calls ``trace_rays()`` repeatedly, each time processing surface
@@ -1577,12 +1577,14 @@ def trace_with_optics(
 
     Returns
     -------
-    (hits, bounce_counts):
+    (hits, bounce_counts, orig_indices):
         ``hits`` is ``(M, N_HIT_COLS)`` float32 — detected hits only
         (a subset of the input rays), with ``HT`` = total accumulated
         path length.  ``bounce_counts`` is ``(M,)`` int32 — number of
-        surface reflections for each hit.  If no hits are detected,
-        returns two empty arrays.
+        surface reflections for each hit.  ``orig_indices`` is ``(M,)``
+        int32 — the original photon index for each detected hit (for
+        lookups into per-photon data like creation time).  If no hits
+        are detected, returns two empty arrays and an empty index array.
     """
     from annieray.optics import evaluate_hit
 
@@ -1598,6 +1600,7 @@ def trace_with_optics(
     n_bounces = np.zeros(n, dtype=np.int32)
     detected_hits: list[np.ndarray] = []
     detected_bounces: list[np.int32] = []
+    detected_indices: list[int] = []
 
     for bounce in range(max_bounces + 1):
         idx = np.where(alive)[0]
@@ -1630,6 +1633,7 @@ def trace_with_optics(
                 hits[j, HT] = total_path[i]
                 detected_hits.append(hits[j:j + 1].copy())
                 detected_bounces.append(np.int32(bounce))
+                detected_indices.append(i)
                 alive[i] = False
             elif action == "reflect":
                 origins[i] = hits[j, HX:HZ + 1]
@@ -1642,8 +1646,11 @@ def trace_with_optics(
     if detected_hits:
         hits_out = np.concatenate(detected_hits, axis=0)
         bounces_out = np.array(detected_bounces, dtype=np.int32)
-        return hits_out, bounces_out
-    return np.zeros((0, N_HIT_COLS), dtype=np.float32), np.zeros(0, dtype=np.int32)
+        indices_out = np.array(detected_indices, dtype=np.int32)
+        return hits_out, bounces_out, indices_out
+    return (np.zeros((0, N_HIT_COLS), dtype=np.float32),
+            np.zeros(0, dtype=np.int32),
+            np.zeros(0, dtype=np.int32))
 
 
 def trace_cherenkov(
@@ -1677,19 +1684,20 @@ def trace_cherenkov(
     if rng is None:
         rng = np.random.default_rng()
 
-    origins, directions = generate_cherenkov_photons(
+    origins, directions, create_times = generate_cherenkov_photons(
         muon_pos, muon_dir, n_photons, rng=rng,
     )
 
     if max_bounces > 0:
         cfg = optics_config if optics_config is not None else load_optics_config(None)
-        hits, bounce_counts = trace_with_optics(
+        hits, bounce_counts, orig_indices = trace_with_optics(
             origins, directions, geometry, cfg,
             max_bounces=max_bounces, n_water=n_water, rng=rng,
         )
     else:
         hits = trace_rays(origins, directions, geometry)
         bounce_counts = np.zeros(hits.shape[0], dtype=np.int32)
+        orig_indices = np.arange(hits.shape[0], dtype=np.int32)
 
     # ---- Expand from N_HIT_COLS to N_EXPANDED_COLS ----
     # Add arrival_time (14), wavelength (15), bounce_count (16).
@@ -1703,6 +1711,6 @@ def trace_cherenkov(
     c_in_water = C_MM_NS / n_water
     hit_mask = hits[:, HI] > 0.5
     if hit_mask.any():
-        full[hit_mask, H_ARRIVAL] = hits[hit_mask, HT] / c_in_water
+        full[hit_mask, H_ARRIVAL] = create_times[orig_indices[hit_mask]] + hits[hit_mask, HT] / c_in_water
 
     return full

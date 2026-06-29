@@ -851,7 +851,7 @@ function updateMuonAndLight(pos, dir) {
     const coneCenter = p.clone().add(d.clone().multiplyScalar(coneLen / 2));
     coneVisual.position.copy(coneCenter);
     const upDir = new THREE.Vector3(0, 1, 0);
-    coneVisual.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(upDir, d));
+    coneVisual.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(upDir, d.clone().negate()));
     coneVisual.castShadow = false;
     coneVisual.receiveShadow = false;
     coneVisual.visible = document.getElementById('showCone').checked;

@@ -167,10 +167,11 @@ def _generate_cherenkov(
     """
     from annieray.cherenkov import generate_cherenkov_photons
 
-    return generate_cherenkov_photons(
+    origins, directions, create_times = generate_cherenkov_photons(
         muon_pos, muon_dir, n,
         cherenkov_angle=cherenkov_angle, rng=rng,
     )
+    return origins, directions
 
 
 def run_command(args: argparse.Namespace) -> None:

@@ -83,7 +83,7 @@ defaultWavelength = 1234 #Just here because the original file has a singular spe
 def generate_cherenkov_photons(
     muon_pos,
     muonDirec,
-    photonNumUnused,
+    photons_per_cm: int = 150,
     thetaC: float = 0.73,
     rng: np.random.Generator | None=None, #Only here because the original has it here
     wavelength: float = defaultWavelength #Only here because the original has it here
@@ -116,7 +116,7 @@ def generate_cherenkov_photons(
         #print('Photon Generation Event:',j, '\n') #Nice to have some way of measuring progress is happening
         
         #Generate photonNum photons per unit length along the track and perform any necessary calculations
-        for k in range(photonNum): 
+        for k in range(photons_per_cm): 
 
             #Run spatial probability of photon generation
             photonProb = rng.uniform(0,1)
@@ -140,12 +140,12 @@ def generate_cherenkov_photons(
             xDirec, yDirec, zDirec = getPhotonVec(muonDirec,thetaC,photonAlpha)
 
             #This is the total photon id, +1 has been added to k to avoid multiple zeros in the photon id
-            netK.append(k+(j*150)) 
+            netK.append(k + j * photons_per_cm) 
 
             photonDat.append((photonSegmentID, photonID, createTime[-1], xDirec, yDirec, zDirec, photonX, photonY, photonZ, photWave)) # Append photon id, time, direction, and position
     #Initialize lists and assign data
-    origins = np.empty((photonNum*(i+1),3),dtype=np.float32) 
-    directions = np.empty((photonNum*(i+1),3),dtype=np.float32) 
+    origins = np.empty((photons_per_cm * (i + 1), 3), dtype=np.float32) 
+    directions = np.empty((photons_per_cm * (i + 1), 3), dtype=np.float32) 
     
     origins[:,0] = [row[6] for row in photonDat]
     origins[:,1] = [row[7] for row in photonDat]
@@ -154,5 +154,7 @@ def generate_cherenkov_photons(
     directions[:,0] = [row[3] for row in photonDat]
     directions[:,1] = [row[4] for row in photonDat]
     directions[:,2] = [row[5] for row in photonDat]
-    return origins, directions
+
+    create_times = np.array(createTime[:len(origins)], dtype=np.float32)
+    return origins, directions, create_times
 #print('Cherenkov.py is finished')

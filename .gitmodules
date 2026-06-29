@@ -1,0 +1,3 @@
+[submodule "extern/LApyPD"]
+	path = extern/LApyPD
+	url = https://github.com/EliWBH/LApyPD.git
