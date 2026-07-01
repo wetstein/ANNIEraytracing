@@ -16,7 +16,7 @@ from urllib.parse import urlparse, parse_qs
 
 import numpy as np
 
-from annieray.lappd_model import build_housing, housing_to_arrays
+from annieray.lappd_model import build_housing, housing_to_arrays, LAPPDHousing, compute_housing_track_length
 from annieray.lappd_response import process_hit_dicts, LAPPDResponseConfig
 
 housing_json: dict = {}
@@ -138,15 +138,25 @@ def _ray_rectangle_intersect(
 def _trace_cherenkov_on_lappd(
     muon_pos: tuple[float, float, float],
     muon_dir: tuple[float, float, float],
-    n_photons: int,
+    photons_per_cm: int,
     housing: dict,
     rng: np.random.Generator,
 ) -> dict:
     """Generate Cherenkov photons using the proper generator and trace against the LAPPD housing."""
-    origins, directions, create_times = generate_cherenkov_photons(muon_pos, muon_dir, n_photons, rng=rng)
+    # Build a LAPPDHousing from the dict for track-length computation
+    h = LAPPDHousing(
+        centre=tuple(housing["center"]),
+        axes=(tuple(housing["axis_x"]), tuple(housing["axis_y"]), tuple(housing["axis_z"])),
+        half=tuple(housing["half"]),
+    )
+    track_length = compute_housing_track_length(muon_pos, muon_dir, h)
+    origins, directions, create_times = generate_cherenkov_photons(
+        muon_pos, muon_dir, photons_per_cm, track_length=track_length, rng=rng,
+    )
     result = _trace_hits(origins, directions, housing, rng, create_times)
     result["muon_pos"] = list(muon_pos)
     result["muon_dir"] = list(muon_dir)
+    result["photons_per_cm"] = photons_per_cm
     return result
 
 
@@ -779,7 +789,7 @@ async function runTrace() {
   const pos = getPosition();
   const dir = getDirection();
   updateMuonMarker(pos, dir);
-  const nPhotons = parseInt(document.getElementById('nPhotons').value) || 5000;
+  const nPhotons = parseInt(document.getElementById('nPhotons').value) || 150;
 
   while (rayGroup.children.length) rayGroup.remove(rayGroup.children[0]);
   while (hitGroup.children.length) hitGroup.remove(hitGroup.children[0]);
@@ -789,7 +799,8 @@ async function runTrace() {
 
   const spread = currentMode === 'spot' ? parseFloat(spreadSlider.value) : 2;
   const enableResp = document.getElementById('enableResponse').checked ? '&response=1' : '';
-  const url = `/api/trace?x=${pos.x}&y=${pos.y}&z=${pos.z}&dx=${dir.x.toFixed(6)}&dy=${dir.y.toFixed(6)}&dz=${dir.z.toFixed(6)}&n=${nPhotons}&mode=${currentMode}&spread=${spread}${enableResp}`;
+  const nParam = currentMode === 'spot' ? `n=${nPhotons}` : `photons_per_cm=${nPhotons}`;
+  const url = `/api/trace?x=${pos.x}&y=${pos.y}&z=${pos.z}&dx=${dir.x.toFixed(6)}&dy=${dir.y.toFixed(6)}&dz=${dir.z.toFixed(6)}&${nParam}&mode=${currentMode}&spread=${spread}${enableResp}`;
 
   const resp = await fetch(url);
   const data = await resp.json();
@@ -1079,7 +1090,8 @@ class LAPPDServer(BaseHTTPRequestHandler):
             dx = float(qs.get("dx", ["0"])[0])
             dy = float(qs.get("dy", ["0"])[0])
             dz = float(qs.get("dz", ["-1"])[0])
-            n = int(qs.get("n", ["5000"])[0])
+            photons_per_cm = int(qs.get("photons_per_cm", ["150"])[0])
+            n_spot = int(qs.get("n", ["5000"])[0])
             mode = qs.get("mode", ["cherenkov"])[0]
             spread = float(qs.get("spread", ["2"])[0])
             enable_response = qs.get("response", ["0"])[0] in ("1", "true", "yes")
@@ -1096,12 +1108,12 @@ class LAPPDServer(BaseHTTPRequestHandler):
         rng = np.random.default_rng()
         if mode == "spot":
             result = _trace_spot_on_lappd(
-                (x, y, z), (dx, dy, dz), n, spread,
+                (x, y, z), (dx, dy, dz), n_spot, spread,
                 self._housing, rng,
             )
         else:
             result = _trace_cherenkov_on_lappd(
-                (x, y, z), (dx, dy, dz), n,
+                (x, y, z), (dx, dy, dz), photons_per_cm,
                 self._housing, rng,
             )
 

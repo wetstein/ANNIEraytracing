@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--step", type=Path, default=None, help="Path to STEP CAD file")
     run.add_argument("--manifest", type=Path, default=None, help="Path to cached component manifest JSON")
     run.add_argument("--pmt-csv", type=Path, default=None, help="Path to PMT scan file or CSV (default: PMTPositions_Scan.txt near GDML)")
-    run.add_argument("--photons", type=int, default=100000, help="Number of photons to trace")
+    run.add_argument("--photons-per-cm", type=int, default=150, help="Photons per cm along the 4 m muon track (total ≈ 401 × this value)")
     run.add_argument("--output", "-o", type=Path, default=Path("hits.parquet"), help="Output Parquet path")
     run.add_argument("--seed", type=int, default=None, help="Random seed")
     run.add_argument("--mode", choices=["uniform", "cherenkov"], default="uniform",
@@ -76,6 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
                      help="Per-PMT spin (deg) about forward axis for bottom PMTs (default: 22.5)")
     viz.add_argument("--det-rotation", type=float, default=22.5,
                      help="Global Z-rotation (deg) so +Y aligns with octagon corner (default: 22.5)")
+    viz.add_argument("--surfboard", type=int, default=0, choices=[0, 1, 3],
+                     help="Number of obscurant PVC surfboards (0, 1, or 3)")
 
     detcfg = sub.add_parser("build-detector-config",
                             help="Build detector registry YAML from geometry")
@@ -96,6 +98,47 @@ def build_parser() -> argparse.ArgumentParser:
     lappd = sub.add_parser("viz-lappd", help="Start standalone LAPPD module viewer")
     lappd.add_argument("--host", type=str, default="localhost", help="Host to bind (default: localhost)")
     lappd.add_argument("--port", type=int, default=8081, help="Port to bind (default: 8081)")
+
+    batch = sub.add_parser("batch", help="Batch-mode event generation")
+    batch.add_argument("--gdml", type=Path, default=Path("PHASE2_INNER_STRUCTURE_closed.gdml"),
+                       help="Path to GDML geometry mesh")
+    batch.add_argument("--step", type=Path, default=None, help="Path to STEP CAD file")
+    batch.add_argument("--manifest", type=Path, default=None, help="Path to cached component manifest JSON")
+    batch.add_argument("--pmt-csv", type=Path, default=None, help="Path to PMT scan file or CSV")
+    batch.add_argument("--events", type=int, default=100, help="Number of events to generate")
+    batch.add_argument("--muon-fixed", type=str, default=None,
+                       help="Fixed muon topology: 'x y z t0 dx dy dz' (7 floats)")
+    batch.add_argument("--muon-file", type=Path, default=None,
+                       help="File with one topology per line: 'x y z t0 dx dy dz'")
+    batch.add_argument("--photons-per-cm", type=int, default=150,
+                       help="Photons per cm along the muon track")
+    batch.add_argument("--batch-size", type=int, default=50,
+                       help="Events per GPU launch (default: 50, higher = faster)")
+    batch.add_argument("--output-dir", "-o", type=Path, default=Path("results"),
+                       help="Output directory for Parquet files")
+    batch.add_argument("--no-record", action="store_true",
+                       help="Skip writing per-event output files")
+    batch.add_argument("--pmt-response", action="store_true",
+                       help="Enable PMT digital model")
+    batch.add_argument("--full-wf", action="store_true",
+                       help="Use full waveform path for PMT response")
+    batch.add_argument("--no-lappd", action="store_true", help="Skip LAPPD rectangles")
+    batch.add_argument("--surfboard", type=int, default=0, choices=[0, 1, 3],
+                       help="Number of obscurant PVC surfboards (0, 1, or 3)")
+    batch.add_argument("--z-offset", type=float, default=0.0, help="Vertical offset (mm)")
+    batch.add_argument("--lappd-model", choices=["default", "annie"], default="annie",
+                       help="LAPPD geometry model")
+    batch.add_argument("--det-rotation", type=float, default=22.5,
+                       help="Global Z-rotation (deg) so +Y aligns with octagon corner")
+    batch.add_argument("--lappd-indices", type=str, default=None,
+                       help="Comma-separated LAPPD candidate indices")
+    batch.add_argument("--wavelength", type=float, default=350.0,
+                       help="Photon wavelength in nm (default: 350)")
+    batch.add_argument("--max-bounces", type=int, default=0,
+                       help="Number of surface reflections per photon (0 = off)")
+    batch.add_argument("--optics-config", type=Path, default=None,
+                       help="YAML file with per-material optical properties")
+    batch.add_argument("--seed", type=int, default=None, help="Random seed")
 
     return p
 
@@ -151,7 +194,7 @@ def _generate_uniform(geometry: Geometry, n: int, rng: np.random.Generator) -> t
 #Call generate_cherenkov for each muon, make a seperate function for multiple muon generation
 def _generate_cherenkov(
     geometry: Geometry,
-    n: int,
+    photons_per_cm: int,
     rng: np.random.Generator,
     muon_pos: tuple = (0.0, 0.0, 2000.0), #Tank coordinate system (cartesian based on the cylinder) where z is height
     muon_dir: tuple = (0.0, 0.0, -1.0),
@@ -168,7 +211,7 @@ def _generate_cherenkov(
     from annieray.cherenkov import generate_cherenkov_photons
 
     origins, directions, create_times = generate_cherenkov_photons(
-        muon_pos, muon_dir, n,
+        muon_pos, muon_dir, photons_per_cm,
         cherenkov_angle=cherenkov_angle, rng=rng,
     )
     return origins, directions
@@ -192,7 +235,7 @@ def run_command(args: argparse.Namespace) -> None:
     geom = build_geometry(args.gdml, step_path=args.step, manifest_path=args.manifest,
                           pmt_csv_path=args.pmt_csv, lappd_indices=lappd_indices,
                           no_lappd=args.no_lappd, z_offset=args.z_offset, lappd_model=args.lappd_model,
-                          det_rotation_deg=args.det_rotation)
+                          det_rotation_deg=args.det_rotation, n_surfboards=args.surfboard)
 
     print(f"  Mesh: {geom.mesh_vertices.shape[0]} vertices, {geom.mesh_triangles.shape[0]} triangles")
     print(f"  PMTs: {geom.pmt_centers.shape[0]} (radii: {set(f'{r:.1f}' for r in geom.pmt_radii)})")
@@ -213,16 +256,17 @@ def run_command(args: argparse.Namespace) -> None:
     if args.max_bounces > 0 and args.mode == "cherenkov":
         print(f"\nMulti-bounce optics enabled: max {args.max_bounces} reflections per photon")
 
-    print(f"\nGenerating {args.photons} photons ({args.mode} mode)...")
+    total_photons = args.photons_per_cm * 401
+    print(f"\nGenerating {args.photons_per_cm} photons/cm × 401 steps = {total_photons} total ({args.mode} mode)...")
     t0 = time.time()
     if args.mode == "uniform":
-        origins, directions = _generate_uniform(geom, args.photons, rng)
+        origins, directions = _generate_uniform(geom, total_photons, rng)
         hits = trace_rays(origins, directions, geom)
     else:
         optics_cfg = load_optics_config(args.optics_config) if args.max_bounces > 0 else None
         hits = trace_cherenkov(
             (0.0, 0.0, 2000.0), (0.0, 0.0, -1.0),
-            args.photons, geom, rng=rng,
+            args.photons_per_cm, geom, rng=rng,
             wavelength_nm=args.wavelength,
             max_bounces=args.max_bounces,
             optics_config=optics_cfg,
@@ -231,7 +275,7 @@ def run_command(args: argparse.Namespace) -> None:
     print(f"  Generated/traced in {t_gen:.2f}s")
 
     n_hit = int(hits[:, 0].sum())
-    print(f"\nResults: {n_hit}/{args.photons} hit ({n_hit / args.photons * 100:.1f}%)")
+    print(f"\nResults: {n_hit}/{total_photons} hit ({n_hit / total_photons * 100:.1f}%)")
 
     from annieray.tracer import CID_PMT, CID_LAPPD, CID_INNER_STRUCTURE, CID_TANK_WALL
     cid_names = {CID_INNER_STRUCTURE: "structure", CID_PMT: "PMT", CID_LAPPD: "LAPPD", CID_TANK_WALL: "tank"}
@@ -278,9 +322,86 @@ def extract_manifest_command(args: argparse.Namespace) -> None:
     print(f"Saved to {args.output} in {t_elapsed:.1f}s")
 
 
+def batch_command(args: argparse.Namespace) -> None:
+    from annieray.batch import BatchConfig, run_batch
+
+    # Parse muon-fixed
+    muon_fixed = None
+    if args.muon_fixed:
+        parts = args.muon_fixed.split()
+        if len(parts) != 7:
+            print("Error: --muon-fixed requires 7 floats: x y z t0 dx dy dz")
+            return
+        muon_fixed = tuple(float(p) for p in parts)
+
+    config = BatchConfig(
+        n_events=args.events,
+        muon_fixed=muon_fixed,
+        muon_file=args.muon_file,
+        photons_per_cm=args.photons_per_cm,
+        wavelength_nm=args.wavelength,
+        max_bounces=args.max_bounces,
+        batch_size=args.batch_size,
+        pmt_response=args.pmt_response,
+        pmt_full_wf=args.full_wf,
+        output_dir=args.output_dir,
+        record_events=not args.no_record,
+        seed=args.seed,
+    )
+
+    # Validate
+    if args.muon_file and not args.muon_file.exists():
+        print(f"Error: muon file not found: {args.muon_file}")
+        return
+    if args.pmt_csv and not args.pmt_csv.exists():
+        print(f"Error: PMT CSV not found: {args.pmt_csv}")
+        return
+
+    # Build geometry (reuse the same geometry for all events)
+    lappd_indices = None
+    if args.lappd_indices:
+        import json
+        lappd_indices = [int(x) for x in args.lappd_indices.split(",")]
+
+    print(f"Loading geometry from {args.gdml}...")
+    geom = build_geometry(args.gdml, step_path=args.step, manifest_path=args.manifest,
+                          pmt_csv_path=args.pmt_csv, lappd_indices=lappd_indices,
+                          no_lappd=args.no_lappd, z_offset=args.z_offset,
+                          lappd_model=args.lappd_model,
+                          det_rotation_deg=args.det_rotation, n_surfboards=args.surfboard)
+
+    print(f"  Mesh: {geom.mesh_vertices.shape[0]} verts, {geom.mesh_triangles.shape[0]} tris")
+    print(f"  PMTs: {geom.pmt_centers.shape[0]}")
+    print(f"  LAPPDs: {geom.lappd_data.shape[0]}")
+    print(f"  Tank: R={geom.tank_radius:.0f} mm, Z=[{geom.tank_z_min:.0f}, {geom.tank_z_max:.0f}]")
+    if geom.surfboard_data.shape[0] > 0:
+        print(f"  Surfboards: {geom.surfboard_data.shape[0]} PVC panels")
+
+    if args.muon_file:
+        print(f"  Muon topology: from file ({args.muon_file})")
+    elif muon_fixed:
+        print(f"  Muon topology: fixed {muon_fixed}")
+    else:
+        print("  Muon topology: randomized per event")
+
+    print(f"\nGenerating {config.n_events} events ({config.photons_per_cm} ph/cm)...")
+    if config.pmt_response:
+        mode = "waveform" if config.pmt_full_wf else "fast"
+        print(f"  PMT response: enabled ({mode} path)")
+
+    optics_cfg = None
+    if args.max_bounces > 0:
+        from annieray.optics import load_optics_config
+        optics_cfg = load_optics_config(args.optics_config)
+        print(f"  Multi-bounce optics: max {args.max_bounces} reflections")
+
+    paths = run_batch(geom, config, optics_config=optics_cfg)
+    print("Done.")
+
+
 def main(argv: list[str] | None = None) -> None:
     import taichi as ti
-    ti.init(default_fp=ti.f32)
+    ti.init(arch=ti.cpu, default_fp=ti.f32)
 
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -299,6 +420,8 @@ def main(argv: list[str] | None = None) -> None:
         from annieray.viz_lappd_server import run_server as run_lappd_server
 
         run_lappd_server(host=args.host, port=args.port)
+    elif args.command == "batch":
+        batch_command(args)
     else:
         parser.print_help()
 

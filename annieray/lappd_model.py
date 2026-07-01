@@ -146,6 +146,51 @@ def build_housing(
     )
 
 
+def compute_housing_track_length(
+    pos: tuple[float, float, float],
+    direc: tuple[float, float, float],
+    housing: LAPPDHousing,
+) -> float:
+    """Maximum muon track length (m) until the ray exits the housing bounding box.
+
+    Uses slab-method ray–oriented-box intersection.  Returns the
+    exit distance * 1.05 (5 % safety margin) in **metres**, or 4.0 m
+    if the ray misses the box.
+    """
+    cx, cy, cz = housing.centre
+    ax, ay, az = housing.axes
+    hx, hy, hz = housing.half
+    ox, oy, oz = pos
+    dx, dy, dz = direc
+
+    t_min = -1e30
+    t_max = 1e30
+
+    for aax, aay, aaz, h in [(ax[0], ax[1], ax[2], hx),
+                               (ay[0], ay[1], ay[2], hy),
+                               (az[0], az[1], az[2], hz)]:
+        denom = dx * aax + dy * aay + dz * aaz
+        oc = (ox - cx) * aax + (oy - cy) * aay + (oz - cz) * aaz
+        if abs(denom) > 1e-30:
+            t0 = (-h - oc) / denom
+            t1 = (h - oc) / denom
+        else:
+            t0 = -1e30 if (-h - oc) < 0 else 1e30
+            t1 = 1e30 if (h - oc) > 0 else -1e30
+        if t0 > t1:
+            t0, t1 = t1, t0
+        if t0 > t_min:
+            t_min = t0
+        if t1 < t_max:
+            t_max = t1
+        if t_min > t_max:
+            return 4.0
+
+    # t_max is the ray-exit distance in mm; convert to metres * 1.05
+    track_mm = max(t_max, 0.0)
+    return max(track_mm * 1.05 / 1000.0, 0.5)
+
+
 def housing_to_arrays(housing: LAPPDHousing) -> tuple[np.ndarray, np.ndarray]:
     """Flatten a LAPPDHousing into kernel arrays.
 

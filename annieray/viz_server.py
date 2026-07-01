@@ -16,6 +16,7 @@ import math
 import os
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import numpy as np
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
@@ -113,6 +114,8 @@ class VizHandler(BaseHTTPRequestHandler):
             self._handle_trace(params)
         elif path == "/api/housing":
             self._send_lappd_housing()
+        elif path == "/api/surfboards":
+            self._send_surfboards()
         elif path == "/api/lappd_correction":
             self._send_lappd_correction()
         elif path == "/api/detectors":
@@ -144,6 +147,10 @@ class VizHandler(BaseHTTPRequestHandler):
             self._save_correction(data)
         elif path == "/api/lappd_correction":
             self._save_lappd_correction(data)
+        elif path == "/api/surfboard/adjust":
+            self._handle_surfboard_adjust(data)
+        elif path == "/api/lappd/adjust":
+            self._handle_lappd_adjust(data)
         else:
             self.send_error(404)
 
@@ -228,10 +235,11 @@ class VizHandler(BaseHTTPRequestHandler):
         if geometry.lappd_housing_data.shape[0] == 0:
             self._send_json({"housing": []})
             return
-        hd = geometry.lappd_housing_data[0].tolist()
-        ad = geometry.annie_lappd_data[0].tolist()
-        self._send_json({
-            "housing": {
+        housings = []
+        for i in range(geometry.lappd_housing_data.shape[0]):
+            hd = geometry.lappd_housing_data[i].tolist()
+            ad = geometry.annie_lappd_data[i].tolist()
+            housings.append({
                 "center": [hd[0], hd[1], hd[2]],
                 "axis_x": [hd[3], hd[4], hd[5]],
                 "axis_y": [hd[6], hd[7], hd[8]],
@@ -240,8 +248,53 @@ class VizHandler(BaseHTTPRequestHandler):
                 "pc_center": [ad[0], ad[1], ad[2]],
                 "pc_normal": [ad[3], ad[4], ad[5]],
                 "pc_half": [ad[6]],
-            },
-        })
+            })
+        self._send_json({"housing": housings})
+
+    def _send_surfboards(self):
+        if geometry.surfboard_data.shape[0] == 0:
+            self._send_json({"surfboards": []})
+            return
+        boards = []
+        for i in range(geometry.surfboard_data.shape[0]):
+            row = geometry.surfboard_data[i].tolist()
+            boards.append({
+                "center": [row[0], row[1], row[2]],
+                "axis_x": [row[3], row[4], row[5]],
+                "axis_y": [row[6], row[7], row[8]],
+                "axis_z": [row[9], row[10], row[11]],
+                "half": [row[12], row[13], row[14]],
+            })
+        self._send_json({"surfboards": boards})
+
+    def _handle_surfboard_adjust(self, data):
+        idx = int(data["index"])
+        cx = float(data["cx"])
+        cy = float(data["cy"])
+        cz = float(data["cz"])
+        if 0 <= idx < geometry.surfboard_data.shape[0]:
+            geometry.surfboard_data[idx, 0] = cx
+            geometry.surfboard_data[idx, 1] = cy
+            geometry.surfboard_data[idx, 2] = cz
+            self._send_json({"ok": True})
+        else:
+            self._send_json({"error": "invalid index"}, 400)
+
+    def _handle_lappd_adjust(self, data):
+        idx = int(data["index"])
+        cx = float(data["cx"])
+        cy = float(data["cy"])
+        cz = float(data["cz"])
+        if 0 <= idx < geometry.lappd_housing_data.shape[0]:
+            old_center = geometry.lappd_housing_data[idx, 0:3].copy()
+            geometry.lappd_housing_data[idx, 0] = cx
+            geometry.lappd_housing_data[idx, 1] = cy
+            geometry.lappd_housing_data[idx, 2] = cz
+            delta = np.array([cx, cy, cz]) - old_center
+            geometry.annie_lappd_data[idx, 0:3] += delta
+            self._send_json({"ok": True})
+        else:
+            self._send_json({"error": "invalid index"}, 400)
 
     def _send_lappd_correction(self):
         if not self._lappd_corr_path or not os.path.exists(self._lappd_corr_path):
@@ -420,8 +473,8 @@ class VizHandler(BaseHTTPRequestHandler):
             dx = float(params.get("dx", ["0"])[0])
             dy = float(params.get("dy", ["0"])[0])
             dz = float(params.get("dz", ["-1"])[0])
-            n = int(params.get("n", ["150"])[0])
-            n = min(max(n, 100), 1_000_000)
+            photons_per_cm = int(params.get("photons_per_cm", ["150"])[0])
+            photons_per_cm = min(max(photons_per_cm, 1), 1000)
         except (ValueError, TypeError):
             self._send_json({"error": "invalid parameters"}, 400)
             return
@@ -430,11 +483,12 @@ class VizHandler(BaseHTTPRequestHandler):
         t0 = time.time()
         reload_lappd_corrections(geometry)
         hits = trace_cherenkov(
-            (mx, my, mz), (dx, dy, dz), n, geometry, rng=rng,
+            (mx, my, mz), (dx, dy, dz), photons_per_cm, geometry, rng=rng,
         )
         elapsed = time.time() - t0
 
         total_hits = int(hits[:, 0].sum())
+        total_photons = photons_per_cm * 401
 
         # Return positions by component type — these are drawn as dots
         comp = hits[:, 8]
@@ -455,7 +509,7 @@ class VizHandler(BaseHTTPRequestHandler):
                 "tank": len(tank_positions),
             },
             "total_hits": total_hits,
-            "total_photons": n,
+            "total_photons": total_photons,
             "time_ms": round(elapsed * 1000, 1),
         })
 
@@ -522,6 +576,31 @@ HTML_PAGE = r"""<!DOCTYPE html>
   #pmt-adjust #adj-reset:hover { background:#999; }
   #pmt-adjust #adj-cancel { background:#ccc; color:#333; }
   #pmt-adjust #adj-cancel:hover { background:#ddd; }
+  #housing-popup {
+    display:none; position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+    background:rgba(240,242,245,0.95); color:#333; padding:12px 20px;
+    border-radius:8px; font-size:13px; z-index:200; min-width:400px;
+    text-align:center; backdrop-filter:blur(4px);
+    border:1px solid rgba(0,0,0,0.12); box-shadow:0 4px 20px rgba(0,0,0,0.15);
+  }
+  #surfboard-popup {
+    display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:rgba(240,242,245,0.95); color:#333; padding:12px 20px;
+    border-radius:8px; font-size:13px; z-index:200; min-width:400px;
+    text-align:center; backdrop-filter:blur(4px);
+    border:1px solid rgba(0,0,0,0.12); box-shadow:0 4px 20px rgba(0,0,0,0.15);
+  }
+  #surfboard-popup .sb-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+  #surfboard-popup .sb-title h3 { margin:0; font-size:14px; }
+  #surfboard-popup .sb-title button { background:none; border:none; font-size:16px; cursor:pointer; color:#666; padding:2px 6px; border-radius:4px; }
+  #surfboard-popup .sb-title button:hover { background:rgba(0,0,0,0.1); color:#000; }
+  #surfboard-popup .sb-row { display:flex; align-items:center; gap:6px; margin:4px 0; justify-content:center; }
+  #surfboard-popup .sb-row label { min-width:80px; text-align:right; font-size:12px; }
+  #surfboard-popup .sb-row input[type=number] { width:60px; text-align:center; font-family:monospace; font-size:12px; }
+  #surfboard-popup .sb-row input[type=range] { width:180px; margin:0; accent-color:#4488cc; }
+  #surfboard-popup button { margin:6px 4px 0; padding:5px 16px; border:none; border-radius:4px; font-size:12px; cursor:pointer; }
+  #surfboard-popup #surfReset { background:#888; color:#fff; }
+  #surfboard-popup #surfReset:hover { background:#999; }
 </style>
 </head>
 <body>
@@ -546,6 +625,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
   <button id="saveLappdCorr">Save Correction</button>
   <button id="focusLAPPD" disabled>Focus on LAPPD</button>
   <label style="margin-top:6px;"><input type="checkbox" id="lappdGrey"> Grey LAPPD</label>
+  <div id="surfboard-adjust" style="display:none;"></div>
   <hr style="margin:8px 0;border:none;border-top:1px solid rgba(0,0,0,0.1);">
   <label style="margin-top:6px;"><input type="checkbox" id="structGrey"> Grey Structure</label>
   <label style="margin-top:0;font-size:12px;padding-left:24px;">Opacity <input type="range" id="structOpacity" min="0" max="1.0" step="0.01" value="1.0" style="width:100px;"></label>
@@ -645,7 +725,7 @@ let coneVisual = null;
 let spotLight = null;
 let spotTarget = null;
 let housingData = null;
-let boxMesh = null;
+let housingMeshes = [];
 let tracePoints = null;   // group of dot meshes for traced photon hits
 let rayLines = null;      // group of line meshes for sampled ray paths
 let refSpheres = null;    // group of translucent reference spheres
@@ -655,6 +735,8 @@ let pmtGroup = null;      // group of PMT body meshes
 let pmtHWGroup = null;    // group of PMT holder meshes
 let pmtData = null;       // full PMT data from /api/pmts
 let selectedIdx = -1;     // index of selected PMT, -1 = none
+let selectedSurfboard = -1; // index of selected surfboard, -1 = none
+let selectedHousing = -1; // index of selected LAPPD housing, -1 = none
 let selectedMesh = null;  // the mesh object currently highlighted
 
 // ---- DOM refs ----
@@ -897,7 +979,7 @@ async function doTrace() {
     const dx = Math.sin(theta) * Math.cos(phi);
     const dy = Math.sin(theta) * Math.sin(phi);
     const dz = Math.cos(theta);
-    const n = 150;
+    const photonsPerCm = 150;
 
     const btn = document.getElementById('traceBtn');
     btn.disabled = true;
@@ -905,7 +987,7 @@ async function doTrace() {
     traceResultEl = document.getElementById('traceResult');
 
     try {
-        const url = `/api/trace?mx=${mx}&my=${my}&mz=${mz}&dx=${dx.toFixed(6)}&dy=${dy.toFixed(6)}&dz=${dz.toFixed(6)}&n=${n}`;
+        const url = `/api/trace?mx=${mx}&my=${my}&mz=${mz}&dx=${dx.toFixed(6)}&dy=${dy.toFixed(6)}&dz=${dz.toFixed(6)}&photons_per_cm=${photonsPerCm}`;
         const resp = await fetch(url);
         const data = await resp.json();
 
@@ -983,6 +1065,7 @@ async function doTrace() {
             + `struct <b>${c.struct}</b>, `
             + `LAPPD <b>${c.lappd}</b>, `
             + `tank <b>${c.tank}</b>) `
+            + `<span style="color:#888">· ${photonsPerCm} ph/cm</span> `
             + `in ${data.time_ms} ms`;
     } catch (e) {
         traceResultEl.textContent = 'Trace failed: ' + e.message;
@@ -1365,16 +1448,12 @@ async function init() {
 
         statusEl.textContent = `Loaded ${pmtData.centers.length} PMTs.`;
 
-        // Load ANNIE LAPPD housing (if present)
+        // Load ANNIE LAPPD housings (if present)
         const housingResp = await fetch('/api/housing');
         housingData = await housingResp.json();
-        if (!Array.isArray(housingData.housing)) {
-            const h = housingData.housing;
-            const origCenter = new THREE.Vector3(h.center[0], h.center[1], h.center[2]);
-            const origPC = new THREE.Vector3(h.pc_center[0], h.pc_center[1], h.pc_center[2]);
-
-            // Housing box
-            const boxGeo = new THREE.BoxGeometry(h.half[0]*2, h.half[1]*2, h.half[2]*2);
+        housingMeshes.length = 0;
+        let housingCorrOrigins = [];  // original centers per housing (before global correction)
+        if (Array.isArray(housingData.housing) && housingData.housing.length > 0) {
             const boxMat = new THREE.MeshStandardMaterial({
                 color: 0x446688,
                 transparent: true,
@@ -1383,43 +1462,60 @@ async function init() {
                 metalness: 0.0,
                 side: THREE.DoubleSide,
             });
-            boxMesh = new THREE.Mesh(boxGeo, boxMat);
-            boxMesh.position.copy(origCenter);
-            const m4 = new THREE.Matrix4();
-            m4.set(
-                h.axis_x[0], h.axis_y[0], h.axis_z[0], 0,
-                h.axis_x[1], h.axis_y[1], h.axis_z[1], 0,
-                h.axis_x[2], h.axis_y[2], h.axis_z[2], 0,
-                0, 0, 0, 1,
-            );
-            const baseQuat = new THREE.Quaternion().setFromRotationMatrix(m4);
-            boxMesh.quaternion.copy(baseQuat);
-            boxMesh.castShadow = true;
-            boxMesh.receiveShadow = true;
-            scene.add(boxMesh);
-
-            // Photocathode rectangle
-            const pcGeo = new THREE.PlaneGeometry(h.pc_half[0]*2, h.pc_half[0]*2);
             const pcMat = new THREE.MeshStandardMaterial({
                 color: 0x88bbdd,
                 roughness: 0.3,
                 metalness: 0.1,
                 side: THREE.DoubleSide,
             });
-            const pcMesh = new THREE.Mesh(pcGeo, pcMat);
-            pcMesh.position.copy(origPC);
-            pcMesh.quaternion.copy(boxMesh.quaternion);
-            pcMesh.castShadow = true;
-            pcMesh.receiveShadow = true;
-            scene.add(pcMesh);
+            let hidx = 0;
+            for (const h of housingData.housing) {
+                const origCenter = new THREE.Vector3(h.center[0], h.center[1], h.center[2]);
+                const origPC = new THREE.Vector3(h.pc_center[0], h.pc_center[1], h.pc_center[2]);
 
-            // LAPPD global dx/dy/dz corrections
+                const boxGeo = new THREE.BoxGeometry(h.half[0]*2, h.half[1]*2, h.half[2]*2);
+                const boxMesh = new THREE.Mesh(boxGeo, boxMat);
+                boxMesh.position.copy(origCenter);
+                const m4 = new THREE.Matrix4();
+                m4.set(
+                    h.axis_x[0], h.axis_y[0], h.axis_z[0], 0,
+                    h.axis_x[1], h.axis_y[1], h.axis_z[1], 0,
+                    h.axis_x[2], h.axis_y[2], h.axis_z[2], 0,
+                    0, 0, 0, 1,
+                );
+                boxMesh.quaternion.setFromRotationMatrix(m4);
+                boxMesh.castShadow = true;
+                boxMesh.receiveShadow = true;
+                boxMesh.userData = {
+                    isHousing: true,
+                    hIdx: hidx,
+                    origCenter: origCenter.clone(),
+                    origPC: origPC.clone(),
+                    axisX: new THREE.Vector3(h.axis_x[0], h.axis_x[1], h.axis_x[2]),
+                    axisY: new THREE.Vector3(h.axis_y[0], h.axis_y[1], h.axis_y[2]),
+                    axisZ: new THREE.Vector3(h.axis_z[0], h.axis_z[1], h.axis_z[2]),
+                };
+                scene.add(boxMesh);
+
+                const pcGeo = new THREE.PlaneGeometry(h.pc_half[0]*2, h.pc_half[0]*2);
+                const pcMesh = new THREE.Mesh(pcGeo, pcMat);
+                pcMesh.position.copy(origPC);
+                pcMesh.quaternion.copy(boxMesh.quaternion);
+                pcMesh.castShadow = true;
+                pcMesh.receiveShadow = true;
+                scene.add(pcMesh);
+
+                housingMeshes.push({box: boxMesh, pc: pcMesh});
+                housingCorrOrigins.push({center: origCenter.clone(), pc: origPC.clone()});
+                hidx++;
+            }
+
+            // LAPPD global dx/dy/dz corrections (applied to ALL housings)
             const dxInput = document.getElementById('lappdDx');
             const dyInput = document.getElementById('lappdDy');
             const dzInput = document.getElementById('lappdDz');
             const saveBtn = document.getElementById('saveLappdCorr');
 
-            // Load current correction from server
             const corrResp = await fetch('/api/lappd_correction');
             const corrData = await corrResp.json();
             let lappdCorr = {dx: 0, dy: 0, dz: 0};
@@ -1435,8 +1531,12 @@ async function init() {
                 const dx = parseFloat(dxInput.value) || 0;
                 const dy = parseFloat(dyInput.value) || 0;
                 const dz = parseFloat(dzInput.value) || 0;
-                boxMesh.position.set(origCenter.x + dx, origCenter.y + dy, origCenter.z + dz);
-                pcMesh.position.set(origPC.x + dx, origPC.y + dy, origPC.z + dz);
+                for (let i = 0; i < housingMeshes.length; i++) {
+                    const hm = housingMeshes[i];
+                    const orig = housingCorrOrigins[i];
+                    hm.box.position.set(orig.center.x + dx, orig.center.y + dy, orig.center.z + dz);
+                    hm.pc.position.set(orig.pc.x + dx, orig.pc.y + dy, orig.pc.z + dz);
+                }
             }
 
             applyLappdCorrection();
@@ -1460,28 +1560,72 @@ async function init() {
             const greyCheck = document.getElementById('lappdGrey');
             greyCheck.addEventListener('change', () => {
                 const isGrey = greyCheck.checked;
-                if (isGrey) {
-                    boxMat.color.setHex(0x999999);
-                    boxMat.transparent = false;
-                    boxMat.opacity = 1.0;
-                    boxMat.roughness = 0.5;
-                    boxMat.metalness = 0.05;
-                    pcMat.color.setHex(0x999999);
-                    pcMat.roughness = 0.5;
-                    pcMat.metalness = 0.05;
-                } else {
-                    boxMat.color.setHex(0x446688);
-                    boxMat.transparent = true;
-                    boxMat.opacity = 0.25;
-                    boxMat.roughness = 0.6;
-                    boxMat.metalness = 0.0;
-                    pcMat.color.setHex(0x88bbdd);
-                    pcMat.roughness = 0.3;
-                    pcMat.metalness = 0.1;
+                for (const hm of housingMeshes) {
+                    if (isGrey) {
+                        hm.box.material.color.setHex(0x999999);
+                        hm.box.material.transparent = false;
+                        hm.box.material.opacity = 1.0;
+                        hm.box.material.roughness = 0.5;
+                        hm.box.material.metalness = 0.05;
+                        hm.pc.material.color.setHex(0x999999);
+                        hm.pc.material.roughness = 0.5;
+                        hm.pc.material.metalness = 0.05;
+                    } else {
+                        hm.box.material.color.setHex(0x446688);
+                        hm.box.material.transparent = true;
+                        hm.box.material.opacity = 0.25;
+                        hm.box.material.roughness = 0.6;
+                        hm.box.material.metalness = 0.0;
+                        hm.pc.material.color.setHex(0x88bbdd);
+                        hm.pc.material.roughness = 0.3;
+                        hm.pc.material.metalness = 0.1;
+                    }
                 }
             });
 
             document.getElementById('focusLAPPD').disabled = false;
+        }
+
+        // ---- Surfboard obscurant panels ----
+        const surfResp = await fetch('/api/surfboards');
+        const surfData = await surfResp.json();
+        const surfMeshes = [];
+        if (Array.isArray(surfData.surfboards)) {
+            const surfMat = new THREE.MeshStandardMaterial({
+                color: 0x333344,
+                roughness: 0.8,
+                metalness: 0.0,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.35,
+            });
+            let sbIdx = 0;
+            for (const sb of surfData.surfboards) {
+                const geo = new THREE.BoxGeometry(sb.half[0]*2, sb.half[1]*2, sb.half[2]*2);
+                const mesh = new THREE.Mesh(geo, surfMat);
+                mesh.position.set(sb.center[0], sb.center[1], sb.center[2]);
+                const m4 = new THREE.Matrix4();
+                m4.set(
+                    sb.axis_x[0], sb.axis_y[0], sb.axis_z[0], 0,
+                    sb.axis_x[1], sb.axis_y[1], sb.axis_z[1], 0,
+                    sb.axis_x[2], sb.axis_y[2], sb.axis_z[2], 0,
+                    0, 0, 0, 1,
+                );
+                mesh.quaternion.setFromRotationMatrix(m4);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                mesh.userData = {
+                    isSurfboard: true,
+                    sbIdx: sbIdx,
+                    origCenter: new THREE.Vector3(sb.center[0], sb.center[1], sb.center[2]),
+                    axisX: new THREE.Vector3(sb.axis_x[0], sb.axis_x[1], sb.axis_x[2]),
+                    axisY: new THREE.Vector3(sb.axis_y[0], sb.axis_y[1], sb.axis_y[2]),
+                    axisZ: new THREE.Vector3(sb.axis_z[0], sb.axis_z[1], sb.axis_z[2]),
+                };
+                scene.add(mesh);
+                surfMeshes.push(mesh);
+                sbIdx++;
+            }
         }
 
         // ---- Grey toggles for structure and PMTs ----
@@ -1871,10 +2015,33 @@ async function init() {
             pmtGroup.children.forEach(ch => { if (ch.userData && ch.userData.pmtIdx !== undefined) targets.push(ch); });
             pmtHWGroup.children.forEach(ch => { if (ch.userData && ch.userData.pmtIdx !== undefined && ch.visible) targets.push(ch); });
 
-            const hits = raycaster.intersectObjects(targets);
-            if (hits.length > 0) {
+            const pmtHits = raycaster.intersectObjects(targets);
+            if (pmtHits.length > 0) {
                 deselectPMT();
-                selectPMT(hits[0].object.userData.pmtIdx);
+                deselectSurfboard();
+                selectPMT(pmtHits[0].object.userData.pmtIdx);
+                return;
+            }
+
+            // Check housing clicks
+            const housingTargets = housingMeshes.map(hm => hm.box);
+            const housingHits = raycaster.intersectObjects(housingTargets);
+            if (housingHits.length > 0) {
+                deselectPMT();
+                deselectSurfboard();
+                selectHousing(housingHits[0].object.userData.hIdx);
+                return;
+            }
+
+            const surfHits = raycaster.intersectObjects(surfMeshes);
+            if (surfHits.length > 0) {
+                deselectPMT();
+                deselectHousing();
+                selectSurfboard(surfHits[0].object.userData.sbIdx);
+            } else if (selectedSurfboard >= 0) {
+                deselectSurfboard();
+            } else if (selectedHousing >= 0) {
+                deselectHousing();
             } else if (selectedIdx >= 0) {
                 deselectPMT();
             }
@@ -1945,6 +2112,175 @@ async function init() {
 
         document.getElementById('adj-cancel').addEventListener('click', cancelAdjustment);
 
+        // ---- Surfboard interactive position popup ----
+        const surfPopup = document.getElementById('surfboard-popup');
+
+        function updateSurfboardPosition() {
+            const idx = selectedSurfboard;
+            if (idx < 0 || idx >= surfMeshes.length) return;
+            const mesh = surfMeshes[idx];
+            const ud = mesh.userData;
+            const dVert = parseFloat(document.getElementById('surfVert').value) || 0;
+            const dRad = parseFloat(document.getElementById('surfRad').value) || 0;
+            const dTang = parseFloat(document.getElementById('surfTang').value) || 0;
+
+            const dcx = dVert * ud.axisY.x + dRad * ud.axisZ.x + dTang * ud.axisX.x;
+            const dcy = dVert * ud.axisY.y + dRad * ud.axisZ.y + dTang * ud.axisX.y;
+            const dcz = dVert * ud.axisY.z + dRad * ud.axisZ.z + dTang * ud.axisX.z;
+
+            const newCx = ud.origCenter.x + dcx;
+            const newCy = ud.origCenter.y + dcy;
+            const newCz = ud.origCenter.z + dcz;
+            mesh.position.set(newCx, newCy, newCz);
+
+            fetch('/api/surfboard/adjust', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({index: idx, cx: newCx, cy: newCy, cz: newCz}),
+            }).catch(() => {});
+        }
+
+        function selectSurfboard(idx) {
+            selectedSurfboard = idx;
+            document.getElementById('surfPopupIdx').textContent = idx + 1;
+            for (const axis of ['Vert', 'Rad', 'Tang']) {
+                document.getElementById('surf' + axis).value = 0;
+                document.getElementById('surf' + axis + 'Num').value = 0;
+            }
+            surfPopup.style.display = 'block';
+        }
+
+        function deselectSurfboard() {
+            if (selectedSurfboard < 0) return;
+            selectedSurfboard = -1;
+            surfPopup.style.display = 'none';
+        }
+
+        // Bidirectional sync: slider → number, number → slider
+        const surfAxes = [
+            { slider: 'surfVert', num: 'surfVertNum' },
+            { slider: 'surfRad',  num: 'surfRadNum' },
+            { slider: 'surfTang', num: 'surfTangNum' },
+        ];
+        for (const { slider, num } of surfAxes) {
+            document.getElementById(slider).addEventListener('input', () => {
+                document.getElementById(num).value = document.getElementById(slider).value;
+                updateSurfboardPosition();
+            });
+            document.getElementById(num).addEventListener('input', () => {
+                document.getElementById(slider).value = document.getElementById(num).value;
+                updateSurfboardPosition();
+            });
+        }
+
+        document.getElementById('surfReset').addEventListener('click', () => {
+            const idx = selectedSurfboard;
+            if (idx < 0 || idx >= surfMeshes.length) return;
+            const mesh = surfMeshes[idx];
+            const orig = mesh.userData.origCenter;
+            mesh.position.copy(orig);
+            for (const axis of ['Vert', 'Rad', 'Tang']) {
+                document.getElementById('surf' + axis).value = 0;
+                document.getElementById('surf' + axis + 'Num').value = 0;
+            }
+            fetch('/api/surfboard/adjust', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({index: idx, cx: orig.x, cy: orig.y, cz: orig.z}),
+            }).catch(() => {});
+        });
+
+        document.getElementById('surfPopupClose').addEventListener('click', deselectSurfboard);
+
+        // ---- LAPPD housing interactive position popup ----
+        const housingPopup = document.getElementById('housing-popup');
+
+        function updateHousingPosition() {
+            const idx = selectedHousing;
+            if (idx < 0 || idx >= housingMeshes.length) return;
+            const hm = housingMeshes[idx];
+            const ud = hm.box.userData;
+            const dVert = parseFloat(document.getElementById('hVert').value) || 0;
+            const dRad = parseFloat(document.getElementById('hRad').value) || 0;
+            const dTang = parseFloat(document.getElementById('hTang').value) || 0;
+
+            const dcx = dVert * ud.axisY.x + dRad * ud.axisZ.x + dTang * ud.axisX.x;
+            const dcy = dVert * ud.axisY.y + dRad * ud.axisZ.y + dTang * ud.axisX.y;
+            const dcz = dVert * ud.axisY.z + dRad * ud.axisZ.z + dTang * ud.axisX.z;
+
+            const newCx = ud.origCenter.x + dcx;
+            const newCy = ud.origCenter.y + dcy;
+            const newCz = ud.origCenter.z + dcz;
+            hm.box.position.set(newCx, newCy, newCz);
+
+            // PC moves by the same delta
+            hm.pc.position.set(
+                ud.origPC.x + dcx,
+                ud.origPC.y + dcy,
+                ud.origPC.z + dcz,
+            );
+
+            fetch('/api/lappd/adjust', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({index: idx, cx: newCx, cy: newCy, cz: newCz}),
+            }).catch(() => {});
+        }
+
+        function selectHousing(idx) {
+            selectedHousing = idx;
+            document.getElementById('hPopupIdx').textContent = idx + 1;
+            for (const axis of ['Vert', 'Rad', 'Tang']) {
+                document.getElementById('h' + axis).value = 0;
+                document.getElementById('h' + axis + 'Num').value = 0;
+            }
+            housingPopup.style.display = 'block';
+        }
+
+        function deselectHousing() {
+            if (selectedHousing < 0) return;
+            selectedHousing = -1;
+            housingPopup.style.display = 'none';
+        }
+
+        const housingAxes = [
+            { slider: 'hVert', num: 'hVertNum' },
+            { slider: 'hRad',  num: 'hRadNum' },
+            { slider: 'hTang', num: 'hTangNum' },
+        ];
+        for (const { slider, num } of housingAxes) {
+            document.getElementById(slider).addEventListener('input', () => {
+                document.getElementById(num).value = document.getElementById(slider).value;
+                updateHousingPosition();
+            });
+            document.getElementById(num).addEventListener('input', () => {
+                document.getElementById(slider).value = document.getElementById(num).value;
+                updateHousingPosition();
+            });
+        }
+
+        document.getElementById('hReset').addEventListener('click', () => {
+            const idx = selectedHousing;
+            if (idx < 0 || idx >= housingMeshes.length) return;
+            const hm = housingMeshes[idx];
+            const ud = hm.box.userData;
+            const orig = ud.origCenter;
+            const origPC = ud.origPC;
+            hm.box.position.copy(orig);
+            hm.pc.position.copy(origPC);
+            for (const axis of ['Vert', 'Rad', 'Tang']) {
+                document.getElementById('h' + axis).value = 0;
+                document.getElementById('h' + axis + 'Num').value = 0;
+            }
+            fetch('/api/lappd/adjust', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({index: idx, cx: orig.x, cy: orig.y, cz: orig.z}),
+            }).catch(() => {});
+        });
+
+        document.getElementById('hPopupClose').addEventListener('click', deselectHousing);
+
     } catch (e) {
         statusEl.textContent = 'Error: ' + e.message;
         console.error(e);
@@ -1952,13 +2288,11 @@ async function init() {
 }
 
 function focusLAPPD() {
-    if (!boxMesh) return;
-    const target = boxMesh.position.clone();
-    const normal = new THREE.Vector3(
-        housingData.housing.pc_normal[0],
-        housingData.housing.pc_normal[1],
-        housingData.housing.pc_normal[2],
-    );
+    if (!housingMeshes || housingMeshes.length === 0) return;
+    const hm = housingMeshes[0];
+    const target = hm.box.position.clone();
+    const ud = hm.box.userData;
+    const normal = ud.axisZ.clone();  // inward-facing normal
     const eye = target.clone().add(normal.clone().multiplyScalar(800));
     camera.position.copy(eye);
     controls.target.copy(target);
@@ -1975,6 +2309,59 @@ window.addEventListener('resize', () => {
 
 init();
 </script>
+
+<!-- Surfboard position popup -->
+<div id="surfboard-popup">
+  <div class="sb-title">
+    <h3>Surfboard <span id="surfPopupIdx">0</span></h3>
+    <button id="surfPopupClose">✕</button>
+  </div>
+  <div class="sb-row">
+    <label>Vertical</label>
+    <input type="number" id="surfVertNum" step="1" value="0">
+    <input type="range" id="surfVert" min="-1500" max="1500" step="1" value="0">
+  </div>
+  <div class="sb-row">
+    <label>Radial</label>
+    <input type="number" id="surfRadNum" step="1" value="0">
+    <input type="range" id="surfRad" min="-800" max="800" step="1" value="0">
+  </div>
+  <div class="sb-row">
+    <label>Tangential</label>
+    <input type="number" id="surfTangNum" step="1" value="0">
+    <input type="range" id="surfTang" min="-800" max="800" step="1" value="0">
+  </div>
+  <div>
+    <button id="surfReset">Reset</button>
+  </div>
+</div>
+
+<!-- LAPPD Housing position popup -->
+<div id="housing-popup">
+  <div class="sb-title">
+    <h3>LAPPD Housing <span id="hPopupIdx">0</span></h3>
+    <button id="hPopupClose">✕</button>
+  </div>
+  <div class="sb-row">
+    <label>Vertical</label>
+    <input type="number" id="hVertNum" step="1" value="0">
+    <input type="range" id="hVert" min="-1500" max="1500" step="1" value="0">
+  </div>
+  <div class="sb-row">
+    <label>Radial</label>
+    <input type="number" id="hRadNum" step="1" value="0">
+    <input type="range" id="hRad" min="-800" max="800" step="1" value="0">
+  </div>
+  <div class="sb-row">
+    <label>Tangential</label>
+    <input type="number" id="hTangNum" step="1" value="0">
+    <input type="range" id="hTang" min="-800" max="800" step="1" value="0">
+  </div>
+  <div>
+    <button id="hReset">Reset</button>
+  </div>
+</div>
+
 </body>
 </html>
 """
@@ -1985,7 +2372,7 @@ def run_server(args):
 
     import taichi as ti
 
-    ti.init(default_fp=ti.f32)
+    ti.init(arch=ti.cpu, default_fp=ti.f32)
 
     pmt_csv = args.pmt_csv
     if pmt_csv is None:
@@ -2009,6 +2396,7 @@ def run_server(args):
         bottom_rotation_deg=args.bottom_rot,
         bottom_spin_deg=args.bottom_spin,
         det_rotation_deg=args.det_rotation,
+        n_surfboards=args.surfboard if hasattr(args, 'surfboard') else 0,
     )
     print(f"  Mesh: {geometry.mesh_vertices.shape[0]} verts, {geometry.mesh_triangles.shape[0]} tris")
     print(f"  PMTs: {geometry.pmt_centers.shape[0]}")
