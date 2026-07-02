@@ -102,9 +102,9 @@ def generate_cherenkov_photons(
     b1,b2 = getBasis(muonDirec)
 
     muonArray = rng.uniform(0, track_length, size=n_steps * photons_per_cm)
-    muonArray.sort()
+    muonArray.sort() #Sorts the array in ascending order
 
-    createTime = (muonArray / muonSpeed) * 10**9 + muonStart[3] * 10**9
+    createTime = (muonArray / muonSpeed) * 10**9 + muonStart[3] * 10**9 #Measured in ns
 
     photonAlpha = rng.uniform(0, 2 * np.pi, size=n_steps * photons_per_cm)
 
