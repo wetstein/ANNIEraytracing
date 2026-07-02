@@ -78,8 +78,10 @@ def build_detector_registry(
         ))
 
     # Default LAPPD rectangles
+    n_pmts = len(pmt_centers)
+    n_lappds = lappd_rect_data.shape[0] if lappd_rect_data is not None else 0
     if lappd_rect_data is not None:
-        for i in range(lappd_rect_data.shape[0]):
+        for i in range(n_lappds):
             pos = (float(lappd_rect_data[i, 0]),
                    float(lappd_rect_data[i, 1]),
                    float(lappd_rect_data[i, 2]))
@@ -92,7 +94,7 @@ def build_detector_registry(
                 id=det_id,
                 system="lappd_default",
                 label=f"LAPPD_DEFAULT_{i}",
-                index=i,
+                index=n_pmts + i,
                 position=pos,
                 direction=nd,
                 half_size=half,
@@ -100,8 +102,9 @@ def build_detector_registry(
             ))
 
     # ANNIE LAPPD housing
-    if lappd_housing_data is not None and lappd_housing_data.shape[0] > 0:
-        for i in range(lappd_housing_data.shape[0]):
+    n_housings = lappd_housing_data.shape[0] if lappd_housing_data is not None else 0
+    if lappd_housing_data is not None and n_housings > 0:
+        for i in range(n_housings):
             hc = (float(lappd_housing_data[i, 0]),
                   float(lappd_housing_data[i, 1]),
                   float(lappd_housing_data[i, 2]))
@@ -125,7 +128,7 @@ def build_detector_registry(
                 id=det_id,
                 system="lappd_annie",
                 label=f"LAPPD_ANNIE_{i}",
-                index=i,
+                index=n_pmts + n_lappds + i,
                 position=pc_pos,
                 direction=pc_nd,
                 half_size=pc_half,

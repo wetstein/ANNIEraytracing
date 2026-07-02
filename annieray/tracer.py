@@ -183,15 +183,16 @@ def reload_lappd_corrections(geo: Geometry):
     corr_path = os.path.join(os.path.dirname(__file__), "lappd_corrections.csv")
     if not os.path.exists(corr_path):
         return
-    if geo.lappd_housing_data.shape[0] == 0:
+    n = geo.lappd_housing_data.shape[0]
+    if n == 0:
         return
 
-    new_corrs = np.zeros((1, 3), dtype=np.float32)
+    new_corrs = np.zeros((n, 3), dtype=np.float32)
     with open(corr_path) as f:
         for row in csv.DictReader(f):
             idx = int(row["idx"])
-            if idx == 0:
-                new_corrs[0] = [float(row["dx"]), float(row["dy"]), float(row["dz"])]
+            if 0 <= idx < n:
+                new_corrs[idx] = [float(row["dx"]), float(row["dy"]), float(row["dz"])]
 
     if geo.lappd_corrections_baked is None:
         geo.lappd_corrections_baked = new_corrs.copy()
@@ -200,9 +201,10 @@ def reload_lappd_corrections(geo: Geometry):
         delta = new_corrs - geo.lappd_corrections_baked
         geo.lappd_corrections_baked = new_corrs.copy()
 
-    if np.any(delta != 0.0):
-        geo.lappd_housing_data[0, 0:3] += delta[0]
-        geo.annie_lappd_data[0, 0:3] += delta[0]
+    for idx in range(n):
+        if np.any(delta[idx] != 0.0):
+            geo.lappd_housing_data[idx, 0:3] += delta[idx]
+            geo.annie_lappd_data[idx, 0:3] += delta[idx]
 
 
 def build_surfboards(n: int, tank_z_min: float, tank_z_max: float) -> np.ndarray:

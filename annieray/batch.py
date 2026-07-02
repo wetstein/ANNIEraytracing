@@ -41,6 +41,22 @@ PHOTON_HIT_SCHEMA = pa.schema([
     ("wavelength", pa.float32()),
 ])
 
+MUON_TRUTH_SCHEMA = pa.schema([
+    ("event_id", pa.int64()),
+    ("pos_x", pa.float32()),
+    ("pos_y", pa.float32()),
+    ("pos_z", pa.float32()),
+    ("t0", pa.float32()),
+    ("dir_x", pa.float32()),
+    ("dir_y", pa.float32()),
+    ("dir_z", pa.float32()),
+    ("theta_deg", pa.float32()),
+    ("phi_deg", pa.float32()),
+    ("track_length_mm", pa.float32()),
+    ("n_generated", pa.int32()),
+    ("n_detected", pa.int32()),
+])
+
 PMT_RESPONSE_SCHEMA = pa.schema([
     ("event_id", pa.int64()),
     ("pmt_index", pa.int32()),
@@ -87,7 +103,7 @@ def sample_muon_state(
     elif config.muon_fixed is not None:
         x, y, z, t0, dx, dy, dz = config.muon_fixed
     else:
-        # Random topology
+        # Sampled topology
         if geometry is None:
             x, y, z = _sample_tank_position(rng, 1524.0, 19.0, 3861.0)
         else:
@@ -95,13 +111,31 @@ def sample_muon_state(
                 rng, geometry.tank_radius, geometry.tank_z_min, geometry.tank_z_max
             )
         t0 = 0.0
-        # Downward-going with small random scatter (≈ 5 deg)
-        theta = rng.uniform(0.0, np.radians(5.0))
-        phi = rng.uniform(0.0, 2.0 * np.pi)
-        sin_t = np.sin(theta)
-        dx = float(sin_t * np.cos(phi))
-        dy = float(sin_t * np.sin(phi))
-        dz = -float(np.cos(theta))
+        mode = config.muon_mode
+        if mode == "downward":
+            # Downward-going with small random scatter (≈ 5 deg)
+            theta = rng.uniform(0.0, np.radians(5.0))
+            phi = rng.uniform(0.0, 2.0 * np.pi)
+            sin_t = np.sin(theta)
+            dx = float(sin_t * np.cos(phi))
+            dy = float(sin_t * np.sin(phi))
+            dz = -float(np.cos(theta))
+        elif mode == "isotropic":
+            # Uniform direction on sphere
+            theta = float(np.arccos(rng.uniform(-1.0, 1.0)))
+            phi = float(rng.uniform(0.0, 2.0 * np.pi))
+            dx = float(np.sin(theta) * np.cos(phi))
+            dy = float(np.sin(theta) * np.sin(phi))
+            dz = float(np.cos(theta))
+        elif mode == "beam":
+            # Forward along +Y with up to 15° scatter
+            theta = float(rng.uniform(0.0, np.radians(15.0)))
+            phi = float(rng.uniform(0.0, 2.0 * np.pi))
+            dx = float(np.sin(theta) * np.cos(phi))
+            dy = float(np.cos(theta))
+            dz = float(np.sin(theta) * np.sin(phi))
+        else:
+            raise ValueError(f"Unknown muon_mode: {mode}")
 
     pos = (x, y, z, t0)
     direc = (dx, dy, dz)
@@ -143,54 +177,79 @@ def _load_muon_file(path: Path) -> list:
 
 @dataclass
 class BatchAccumulator:
-    """Accumulates per-event data and writes Parquet at the end.
+    """Writes per-event data incrementally via ``pq.ParquetWriter``.
 
-    Each ``append_event()`` call appends a small Arrow ``RecordBatch``.
-    The final ``write()`` concatenates all batches and writes two Parquet
-    files: ``photon_hits.parquet`` and (if PMT response was enabled)
-    ``pmt_responses.parquet``.
+    Each ``append_event()`` call writes a small Arrow ``RecordBatch``
+    directly to disk as a new row group.  This avoids accumulating all
+    rows in Python memory, which caused progressive slowdown as the
+    batch run progressed.
     """
 
-    photon_batches: list[pa.RecordBatch] = field(default_factory=list)
-    pmt_batches: list[pa.RecordBatch] = field(default_factory=list)
+    output_dir: Path = Path("results")
+
+    _photon_writer: Optional[pq.ParquetWriter] = None
+    _pmt_writer: Optional[pq.ParquetWriter] = None
+    _muon_writer: Optional[pq.ParquetWriter] = None
     _n_photon_rows: int = 0
     _n_pmt_rows: int = 0
-
-    # Pre-allocated arrays reused per event to avoid churn
-    _photon_cols: dict = field(default_factory=dict)
-    _pmt_cols: dict = field(default_factory=dict)
+    _n_muon_rows: int = 0
 
     def append_event(
         self,
         event_id: int,
         hits: np.ndarray,
         pmt_responses: Optional[dict[int, dict]] = None,
+        muon_params: Optional[dict] = None,
     ) -> None:
-        """Record one event's hits and (optionally) PMT responses."""
-        self._append_photon_hits(event_id, hits)
+        """Record one event's hits, PMT responses, and muon truth."""
+        n_detected = self._append_photon_hits(event_id, hits)
         if pmt_responses is not None:
             self._append_pmt_responses(event_id, pmt_responses)
+        if muon_params is not None:
+            self._record_muon(event_id, n_detected, **muon_params)
 
     # ------------------------------------------------------------------
     # Photon hits
     # ------------------------------------------------------------------
 
-    def _append_photon_hits(self, event_id: int, hits: np.ndarray) -> None:
-        """Extract per-detector hit 4-vectors and append a batch."""
-        # Select detector hits (PMT or ANNIE LAPPD)
+    def _lazy_photon_writer(self) -> pq.ParquetWriter:
+        if self._photon_writer is None:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            path = self.output_dir / "photon_hits.parquet"
+            self._photon_writer = pq.ParquetWriter(str(path), PHOTON_HIT_SCHEMA)
+        return self._photon_writer
+
+    def _lazy_pmt_writer(self) -> pq.ParquetWriter:
+        if self._pmt_writer is None:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            path = self.output_dir / "pmt_responses.parquet"
+            self._pmt_writer = pq.ParquetWriter(str(path), PMT_RESPONSE_SCHEMA)
+        return self._pmt_writer
+
+    def _lazy_muon_writer(self) -> pq.ParquetWriter:
+        if self._muon_writer is None:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            path = self.output_dir / "muon_truth.parquet"
+            self._muon_writer = pq.ParquetWriter(str(path), MUON_TRUTH_SCHEMA)
+        return self._muon_writer
+
+    def _append_photon_hits(self, event_id: int, hits: np.ndarray) -> int:
+        """Extract per-detector hit 4-vectors and write a row group.
+
+        Returns the number of detector hits (n_detected).
+        """
         det_mask = (
             (np.abs(hits[:, HDS] - DET_SYS_PMT) < 0.5)
             | (np.abs(hits[:, HDS] - DET_SYS_LAPPD_ANNIE) < 0.5)
         )
-        if not det_mask.any():
-            return
+        n_detected = int(det_mask.sum())
+        if n_detected == 0:
+            return 0
 
         sel = hits[det_mask]
-        n = sel.shape[0]
-
         batch = pa.RecordBatch.from_arrays(
             [
-                pa.array(np.full(n, event_id, dtype=np.int64)),
+                pa.array(np.full(n_detected, event_id, dtype=np.int64)),
                 pa.array(sel[:, HDS].astype(np.int32)),
                 pa.array(sel[:, HDI].astype(np.int32)),
                 pa.array(sel[:, HLU]),
@@ -200,12 +259,9 @@ class BatchAccumulator:
             ],
             schema=PHOTON_HIT_SCHEMA,
         )
-        self.photon_batches.append(batch)
-        self._n_photon_rows += n
-
-    # ------------------------------------------------------------------
-    # PMT responses
-    # ------------------------------------------------------------------
+        self._lazy_photon_writer().write_batch(batch)
+        self._n_photon_rows += n_detected
+        return n_detected
 
     def _append_pmt_responses(
         self, event_id: int, responses: dict[int, dict]
@@ -226,35 +282,60 @@ class BatchAccumulator:
             ],
             schema=PMT_RESPONSE_SCHEMA,
         )
-        self.pmt_batches.append(batch)
+        self._lazy_pmt_writer().write_batch(batch)
         self._n_pmt_rows += n
 
+    def _record_muon(
+        self,
+        event_id: int,
+        n_detected: int,
+        pos: tuple,
+        direc: tuple,
+        track_length: float,
+        n_generated: int,
+    ) -> None:
+        """Record one muon truth row."""
+        x, y, z, t0 = pos
+        dx, dy, dz = direc
+        theta_deg = float(np.degrees(np.arccos(-dz)))
+        phi_deg = float(np.degrees(np.arctan2(dy, dx)))
+
+        batch = pa.RecordBatch.from_arrays(
+            [
+                pa.array([event_id], pa.int64()),
+                pa.array([x], pa.float32()),
+                pa.array([y], pa.float32()),
+                pa.array([z], pa.float32()),
+                pa.array([t0], pa.float32()),
+                pa.array([dx], pa.float32()),
+                pa.array([dy], pa.float32()),
+                pa.array([dz], pa.float32()),
+                pa.array([theta_deg], pa.float32()),
+                pa.array([phi_deg], pa.float32()),
+                pa.array([track_length], pa.float32()),
+                pa.array([n_generated], pa.int32()),
+                pa.array([n_detected], pa.int32()),
+            ],
+            schema=MUON_TRUTH_SCHEMA,
+        )
+        self._lazy_muon_writer().write_batch(batch)
+        self._n_muon_rows += 1
+
     # ------------------------------------------------------------------
-    # Write
+    # Close
     # ------------------------------------------------------------------
 
-    def write(self, output_dir: Path) -> dict[str, Path]:
-        """Concatenate all accumulated batches and write Parquet files.
-
-        Returns ``{"photon_hits": path, "pmt_responses": path}``.
-        """
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        paths: dict[str, Path] = {}
-
-        if self.photon_batches:
-            table = pa.Table.from_batches(self.photon_batches, schema=PHOTON_HIT_SCHEMA)
-            path = output_dir / "photon_hits.parquet"
-            pq.write_table(table, str(path))
-            paths["photon_hits"] = path
-
-        if self.pmt_batches:
-            table = pa.Table.from_batches(self.pmt_batches, schema=PMT_RESPONSE_SCHEMA)
-            path = output_dir / "pmt_responses.parquet"
-            pq.write_table(table, str(path))
-            paths["pmt_responses"] = path
-
-        return paths
+    def close(self) -> None:
+        """Close all Parquet writers (flushes data to disk)."""
+        if self._photon_writer is not None:
+            self._photon_writer.close()
+            self._photon_writer = None
+        if self._pmt_writer is not None:
+            self._pmt_writer.close()
+            self._pmt_writer = None
+        if self._muon_writer is not None:
+            self._muon_writer.close()
+            self._muon_writer = None
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +351,7 @@ class BatchConfig:
     n_events: int = 100
     muon_fixed: Optional[tuple[float, float, float, float, float, float, float]] = None
     muon_file: Optional[Path] = None
+    muon_mode: str = "isotropic"  # "downward", "isotropic", or "beam"
 
     # Photon generation
     photons_per_cm: int = 150
@@ -319,7 +401,7 @@ def run_batch(
     from annieray.pmt_response import process_pmt_hits
 
     rng = np.random.default_rng(config.seed)
-    accumulator = BatchAccumulator()
+    accumulator = BatchAccumulator(output_dir=config.output_dir)
 
     if config.muon_file is not None:
         _load_muon_file(config.muon_file)
@@ -342,6 +424,8 @@ def run_batch(
         batch_ctimes: list[np.ndarray] = []
         event_counts: list[int] = []
         event_muon: list[tuple] = []
+        event_track_length: list[float] = []
+        event_n_generated: list[int] = []
 
         for i in range(n_batch):
             event_id = processed + i
@@ -356,6 +440,8 @@ def run_batch(
             batch_ctimes.append(ct)
             event_counts.append(len(o))
             event_muon.append((muon_pos, muon_dir))
+            event_track_length.append(track_length)
+            event_n_generated.append(len(o))
 
         # Concatenate into one big array
         all_origins = np.vstack(batch_origins)
@@ -399,6 +485,7 @@ def run_batch(
             event_id = processed + i
             sl = slice(offsets[i], offsets[i + 1])
             event_hits = full[sl]
+            muon_pos, muon_dir = event_muon[i]
 
             pmt_responses = None
             if config.pmt_response:
@@ -407,7 +494,16 @@ def run_batch(
                 )
 
             if config.record_events:
-                accumulator.append_event(event_id, event_hits, pmt_responses)
+                muon_params = {
+                    "pos": muon_pos,
+                    "direc": muon_dir,
+                    "track_length": event_track_length[i],
+                    "n_generated": event_n_generated[i],
+                }
+                accumulator.append_event(
+                    event_id, event_hits, pmt_responses,
+                    muon_params=muon_params,
+                )
 
         processed += n_batch
 
@@ -423,11 +519,22 @@ def run_batch(
           f"({config.n_events / elapsed:.1f} ev/s)")
 
     if config.record_events:
-        paths = accumulator.write(config.output_dir)
-        for kind, p in paths.items():
-            hit_str = f" ({accumulator._n_photon_rows} photon rows)" if kind == "photon_hits" else ""
-            pmt_str = f" ({accumulator._n_pmt_rows} PMT response rows)" if kind == "pmt_responses" else ""
-            print(f"  Wrote {p}{hit_str}{pmt_str}")
-        return paths
+        try:
+            accumulator.close()
+        finally:
+            paths = {}
+            if accumulator._n_photon_rows > 0:
+                p = config.output_dir / "photon_hits.parquet"
+                paths["photon_hits"] = p
+                print(f"  Wrote {p} ({accumulator._n_photon_rows} photon rows)")
+            if accumulator._n_pmt_rows > 0:
+                p = config.output_dir / "pmt_responses.parquet"
+                paths["pmt_responses"] = p
+                print(f"  Wrote {p} ({accumulator._n_pmt_rows} PMT response rows)")
+            if accumulator._n_muon_rows > 0:
+                p = config.output_dir / "muon_truth.parquet"
+                paths["muon_truth"] = p
+                print(f"  Wrote {p} ({accumulator._n_muon_rows} muon truth rows)")
+            return paths
 
     return {}

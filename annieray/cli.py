@@ -13,6 +13,7 @@ from annieray.tracer import (
     trace_rays,
     trace_cherenkov,
     Geometry,
+    DET_SYS_PMT, DET_SYS_LAPPD_DEFAULT, DET_SYS_LAPPD_ANNIE,
 )
 from annieray.optics import load_optics_config
 from annieray.output import write_hits, write_detector_config
@@ -110,6 +111,12 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Fixed muon topology: 'x y z t0 dx dy dz' (7 floats)")
     batch.add_argument("--muon-file", type=Path, default=None,
                        help="File with one topology per line: 'x y z t0 dx dy dz'")
+    batch.add_argument("--muon-mode", type=str, default="isotropic",
+                       choices=["downward", "isotropic", "beam"],
+                       help="Muon direction sampling (default: isotropic). "
+                            "'downward' = mostly -Z (atmospheric), "
+                            "'isotropic' = uniform on sphere (default), "
+                            "'beam' = forward along +Y (beam direction)")
     batch.add_argument("--photons-per-cm", type=int, default=150,
                        help="Photons per cm along the muon track")
     batch.add_argument("--batch-size", type=int, default=50,
@@ -338,6 +345,7 @@ def batch_command(args: argparse.Namespace) -> None:
         n_events=args.events,
         muon_fixed=muon_fixed,
         muon_file=args.muon_file,
+        muon_mode=args.muon_mode,
         photons_per_cm=args.photons_per_cm,
         wavelength_nm=args.wavelength,
         max_bounces=args.max_bounces,
@@ -377,12 +385,45 @@ def batch_command(args: argparse.Namespace) -> None:
     if geom.surfboard_data.shape[0] > 0:
         print(f"  Surfboards: {geom.surfboard_data.shape[0]} PVC panels")
 
+    # Save companion files for event display / analysis
+    import json
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Tank metadata
+    meta = {
+        "tank_radius_mm": geom.tank_radius,
+        "tank_z_min_mm": geom.tank_z_min,
+        "tank_z_max_mm": geom.tank_z_max,
+    }
+    meta_path = output_dir / "metadata.json"
+    with open(meta_path, "w") as f:
+        json.dump(meta, f)
+    print(f"  Saved {meta_path}")
+
+    # Detector registry
+    det_path = output_dir / "detectors.csv"
+    with open(det_path, "w") as f:
+        f.write("system_code,detector_index,x,y,z,label,panel\n")
+        for d in geom.detectors:
+            sys_code = {
+                "pmt": DET_SYS_PMT,
+                "lappd_default": DET_SYS_LAPPD_DEFAULT,
+                "lappd_annie": DET_SYS_LAPPD_ANNIE,
+            }.get(d.system, -1)
+            panel = getattr(d, "panel", -1)
+            f.write(f"{sys_code},{d.index},{d.position[0]},{d.position[1]},{d.position[2]},{d.label},{panel}\n")
+    print(f"  Saved {det_path}")
+
     if args.muon_file:
         print(f"  Muon topology: from file ({args.muon_file})")
     elif muon_fixed:
         print(f"  Muon topology: fixed {muon_fixed}")
     else:
-        print("  Muon topology: randomized per event")
+        mode_names = {"downward": "downward (atmospheric)",
+                      "isotropic": "isotropic (totally random, default)",
+                      "beam": "forward along +Y (beam-like)"}
+        print(f"  Muon topology: random position, {mode_names.get(config.muon_mode, config.muon_mode)}")
 
     print(f"\nGenerating {config.n_events} events ({config.photons_per_cm} ph/cm)...")
     if config.pmt_response:
