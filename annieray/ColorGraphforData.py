@@ -4,11 +4,11 @@ import numpy as np
 import random
 
 
-#dat = open('data.txt', 'r')
-#data = dat.read()
-#dat.close()
+dat = open('data.txt', 'r')
+data = dat.read()
+dat.close()
 
-data = np.random.rand(13,13)
+
 #x_vals = np.linspace(-1.2-0.5*(2.4/13.), 1.2+0.5*(2.4/13.), 13)
 #y_vals = np.linspace(-1.2-0.5*(2.4/13.), 1.2+0.5*(2.4/13.), 13)
 
