@@ -4,23 +4,22 @@ import numpy as np
 import random
 
 
-#Taking data from txt file for now
-with open("MuonStartsAndDirecs.txt","r") as file:
-    data = file.read()
+#dat = open('data.txt', 'r')
+#data = dat.read()
+#dat.close()
 
-#Straight from stackoverflow
-data = np.random.rand(10, 10) * 20
-# create discrete colormap
-cmap = colors.ListedColormap(['red', 'blue'])
-bounds = [0,1,2] #[0,1) are red, [1,2) are blue
-norm = colors.BoundaryNorm(bounds, cmap.N)
+data = np.random.rand(13,13)
+#x_vals = np.linspace(-1.2-0.5*(2.4/13.), 1.2+0.5*(2.4/13.), 13)
+#y_vals = np.linspace(-1.2-0.5*(2.4/13.), 1.2+0.5*(2.4/13.), 13)
 
-fig, ax = plt.subplots()
-ax.imshow(data, cmap=cmap, norm=norm)
+x_vals = np.linspace(-1.2, 1.2, 13)
+y_vals = np.linspace(-1.2, 1.2, 13)
+XX,YY = np.meshgrid(x_vals, y_vals)
+fig,ax = plt.subplots()
+plt.pcolormesh(XX,YY,data, cmap='viridis', shading='auto',edgecolors = 'w',linewidths=0.5)
+ax.set_xticks(x_vals)
+ax.set_yticks(y_vals)
 
-# draw gridlines
-ax.grid(which='major', axis='both', linestyle='-', color='k', linewidth=2)
-ax.set_xticks(np.arange(-.5, 10, 1));
-ax.set_yticks(np.arange(-.5, 10, 1));
+plt.colorbar()
 
 plt.show()
