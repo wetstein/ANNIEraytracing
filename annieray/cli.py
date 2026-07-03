@@ -106,7 +106,8 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--step", type=Path, default=None, help="Path to STEP CAD file")
     batch.add_argument("--manifest", type=Path, default=None, help="Path to cached component manifest JSON")
     batch.add_argument("--pmt-csv", type=Path, default=None, help="Path to PMT scan file or CSV")
-    batch.add_argument("--events", type=int, default=100, help="Number of events to generate")
+    batch.add_argument("--events", type=int, default=-1,
+                        help="Number of events (default: 100, or auto-count from --muon-file)")
     batch.add_argument("--muon-fixed", type=str, default=None,
                        help="Fixed muon topology: 'x y z t0 dx dy dz' (7 floats)")
     batch.add_argument("--muon-file", type=Path, default=None,
@@ -329,8 +330,27 @@ def extract_manifest_command(args: argparse.Namespace) -> None:
     print(f"Saved to {args.output} in {t_elapsed:.1f}s")
 
 
+def _count_muon_lines(path: Path) -> int:
+    """Count valid topology lines in a muon file (skips blanks and comments)."""
+    n = 0
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                n += 1
+    return n
+
+
 def batch_command(args: argparse.Namespace) -> None:
     from annieray.batch import BatchConfig, run_batch
+
+    # Auto-detect event count from muon file
+    if args.events == -1:
+        if args.muon_file and args.muon_file.exists():
+            args.events = _count_muon_lines(args.muon_file)
+            print(f"Auto-detected {args.events} events from {args.muon_file}")
+        else:
+            args.events = 100
 
     # Parse muon-fixed
     muon_fixed = None
