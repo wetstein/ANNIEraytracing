@@ -77,6 +77,10 @@ def main() -> None:
     #Begin comparison of event id's and match positions to corresponding event id's
     for i in range(1, len(muonNeededDat)):
         if by_detector["event_id"][:] == muonNeededDat.iloc[i]["event_id"]:
+            totalPhotDat.join(muonNeededDat.iloc[i]["pos_x"])
+            totalPhotDat.join(muonNeededDat.iloc[i]["pos_y"])
+            totalPhotDat.join(muonNeededDat.iloc[i]["pos_z"])
+           
 
     #Writing the txt file
     pd.set_option('display.max_rows', None)

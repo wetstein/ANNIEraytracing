@@ -50,7 +50,7 @@ def main() -> None:
     hits = pq.read_table(args.hits).to_pandas()
     print(f"photon_hits: {len(hits)} rows, {hits.event_id.nunique()} events")
 
-    # ── Per-event summary ─────────────────────────────────────────
+  # ── Per-event summary ─────────────────────────────────────────
     per_event = hits.groupby("event_id").agg(
         n_photons=("detector_index", "count"),
         n_structure=("detector_system", lambda x: (x == -1).sum()),
@@ -60,6 +60,7 @@ def main() -> None:
     )
     print("\n── Per-event hit counts (first 5) ──")
     print(per_event.head())
+
 
     # ── Per-detector hit counts per event ─────────────────────────
     by_detector = hits.groupby(
@@ -72,6 +73,8 @@ def main() -> None:
     print("\n── Per-detector hits (first 10) ──")
     print(by_detector.head(10))
 
+
+
     # ── Example: hits on PMT 42 in every event ────────────────────
     pmt42 = by_detector.query(
         "detector_system == 0 and detector_index == 42"
@@ -79,6 +82,23 @@ def main() -> None:
     print(f"\n── PMT index 42: {len(pmt42)} events with hits ──")
     if not pmt42.empty:
         print(pmt42.head())
+
+    lappd132_p = by_detector.query(
+        "detector_system == 2 and detector_index == 132"
+    )
+
+    lappd133_p = by_detector.query(
+        "detector_system == 2 and detector_index == 133"
+    )
+
+    lappd134_p = by_detector.query(
+        "detector_system == 2 and detector_index == 134"
+    )
+
+
+
+    print("ASDFASDFADHJGJHGJHGJHGJHGJHGSFA")
+    print(type(pmt42))
 
     # ── Example: all ANNIE LAPPD hits ─────────────────────────────
     annie = by_detector.query("detector_system == 2")
@@ -94,6 +114,13 @@ def main() -> None:
     if muons is not None:
         print(f"\n── Muon truth: {len(muons)} events ──")
         print(muons.head())
+
+        pmt42countsbyevent = pmt42.set_index("event_id")["n_hits"]
+        pmt42counts_allevents =  pmt42countsbyevent.reindex(muons["event_id"], fill_value=0)
+        vpmt42counts = pmt42counts_allevents.values
+
+        print("\n── PMT 42 hit counts for all events (first 10) ──")
+        print(vpmt42counts)
 
         # Merge muon params with per-event hit summaries
         ev = per_event.reset_index()
@@ -133,6 +160,22 @@ def main() -> None:
         print(per_event_charge.head())
     else:
         print("\n(No pmt_responses.parquet found — skip --pmt-response?)")
+
+
+    #Creating LAPPD hit data
+    LAPPD_Indices = [132, 133, 134]
+    lappd_hits = hits[hits["detector_index"].isin(LAPPD_Indices)]
+    counts = lappd_hits.groupby(["event_id", "detector_index"]).size().reset_index(name="n_hits")
+    pivoted = counts.pivot(index="event_id", columns="detector_index", values="n_hits").fillna(0).astype(int)
+    pivoted.columns = [f"n_pmt{c}" for c in pivoted.columns]
+
+    tablePhotonsPerMuonHits = muons[["event_id", "pos_x", "pos_z"]].merge(pivoted, on="event_id", how="left")
+    #Writing the txt file
+    pd.set_option('display.max_rows', None)
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
+    with open("LAPPDHits.txt","w",encoding="utf-8") as file:
+        file.write(tablePhotonsPerMuonHits.to_string(index=False))
 
 
 if __name__ == "__main__":

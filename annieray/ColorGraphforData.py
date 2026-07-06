@@ -4,8 +4,10 @@ import numpy as np
 import random
 
 
-dat = open('data.txt', 'r')
+with open('LAPPDHits.txt') as dat:
+    data = dat.read()
 data = dat.read()
+
 dat.close()
 
 

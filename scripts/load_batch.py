@@ -50,6 +50,8 @@ def main() -> None:
     hits = pq.read_table(args.hits).to_pandas()
     print(f"photon_hits: {len(hits)} rows, {hits.event_id.nunique()} events")
 
+    print(hits)
+
     # ── Per-event summary ─────────────────────────────────────────
     per_event = hits.groupby("event_id").agg(
         n_photons=("detector_index", "count"),
