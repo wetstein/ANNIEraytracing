@@ -35,7 +35,7 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-#Below is for plotting
+#Below is imports for plotting
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import numpy as np
