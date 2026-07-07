@@ -169,7 +169,7 @@ def main() -> None:
     pivoted = counts.pivot(index="event_id", columns="detector_index", values="n_hits").fillna(0).astype(int)
     pivoted.columns = [f"n_pmt{c}" for c in pivoted.columns]
 
-    tablePhotonsPerMuonHits = muons[["event_id", "pos_x", "pos_z"]].merge(pivoted, on="event_id", how="left")
+    tablePhotonsPerMuonHits = muons[["event_id", "pos_x", "pos_z"]].merge(pivoted, on="event_id", how="left").fillna(0)
     #Writing the txt file
     pd.set_option('display.max_rows', None)
     pd.set_option('display.max_columns', None)
