@@ -4,21 +4,19 @@ import numpy as np
 import random
 
 
-with open('LAPPDHits.txt') as dat:
-    data = dat.read()
-data = dat.read()
+#dat = open('data.txt', 'r')
+#data = dat.read()
+#dat.close()
 
-dat.close()
-
-
+data = np.random.rand(13,13)
 #x_vals = np.linspace(-1.2-0.5*(2.4/13.), 1.2+0.5*(2.4/13.), 13)
 #y_vals = np.linspace(-1.2-0.5*(2.4/13.), 1.2+0.5*(2.4/13.), 13)
-
+print(data)
 x_vals = np.linspace(-1.2, 1.2, 13)
 y_vals = np.linspace(-1.2, 1.2, 13)
 XX,YY = np.meshgrid(x_vals, y_vals)
 fig,ax = plt.subplots()
-plt.pcolormesh(XX,YY,data, cmap='viridis', shading='auto',edgecolors = 'w',linewidths=0.5)
+plt.pcolormesh(XX,YY,data, cmap='viridis', shading='auto',edgecolors = 'w')
 ax.set_xticks(x_vals)
 ax.set_yticks(y_vals)
 

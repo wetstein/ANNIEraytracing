@@ -35,6 +35,12 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
+#Below is for plotting
+import matplotlib.pyplot as plt
+from matplotlib import colors
+import numpy as np
+import random
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Load and inspect batch output")
@@ -177,6 +183,43 @@ def main() -> None:
     with open("LAPPDHits.txt","w",encoding="utf-8") as file:
         file.write(tablePhotonsPerMuonHits.to_string(index=False))
 
+    data = tablePhotonsPerMuonHits[["n_pmt132", "n_pmt133", "n_pmt134"]].to_numpy()
+    
+    #Plotting color mesh
+    x_vals = np.linspace(-1.2, 1.2, 13) #make this based on data from "tablePhotonPerMuonHits" 
+    y_vals = np.linspace(-1.2, 1.2, 13)
+    XX,YY = np.meshgrid(x_vals, y_vals)
+    fig,ax = plt.subplots()
+    plt.pcolormesh(XX,YY,data[:, 0].reshape(13,13), cmap='viridis', shading='auto',edgecolors = 'r',linewidths=0.5,norm = colors.LogNorm(vmin=1, vmax=data[:, 0].max()))
+    plt.title("LAPPD 132 Hits")
+    ax.set_xticks(x_vals)
+    ax.set_yticks(y_vals)
 
+    plt.colorbar()
+
+    plt.show()
+
+
+    #Plotting LAPPD 133 Hits
+    fig2,ax2 = plt.subplots()
+    plt.pcolormesh(XX,YY,data[:, 1].reshape(13,13), cmap='viridis', shading='auto',edgecolors = 'r',linewidths=0.5,norm = colors.LogNorm(vmin=1, vmax=data[:, 1].max()))
+    plt.title("LAPPD 133 Hits")
+    ax2.set_xticks(x_vals)
+    ax2.set_yticks(y_vals)
+
+    plt.colorbar()
+
+    plt.show()
+
+    #Plotting LAPPD 134 Hits
+    fig3,ax3 = plt.subplots()
+    plt.pcolormesh(XX,YY,data[:, 2].reshape(13,13), cmap='viridis', shading='auto',edgecolors = 'r',linewidths=0.5,norm = colors.LogNorm(vmin=1, vmax=data[:, 2].max()))
+    plt.title("LAPPD 134 Hits")
+    ax3.set_xticks(x_vals)
+    ax3.set_yticks(y_vals)
+
+    plt.colorbar()
+
+    plt.show()
 if __name__ == "__main__":
     main()
