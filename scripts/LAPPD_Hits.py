@@ -78,35 +78,40 @@ def main() -> None:
     XX,YY = np.meshgrid(x_vals, y_vals)
     fig,ax = plt.subplots()
     plt.pcolormesh(XX,YY,data[:, 0].reshape(13,13), cmap='viridis', shading='auto',edgecolors = 'r',linewidths=0.5,norm = colors.LogNorm(vmin=1, vmax=data[:, 0].max()))
-    plt.title("LAPPD 132 Hits")
+    plt.title("LAPPD 132 Hits from Muon Vertex Positions")
     ax.set_xticks(x_vals)
     ax.set_yticks(y_vals)
-
-    plt.colorbar()
-
+    ax.set_xlabel("X Position (m)")
+    ax.set_ylabel("Y Position (m)")
+    cbar1 = plt.colorbar()
+    cbar1.set_label('Number of Hits', fontsize=12, rotation=270, labelpad=15)
+    
     plt.show()
 
 
     #Plotting LAPPD 133 Hits
     fig2,ax2 = plt.subplots()
     plt.pcolormesh(XX,YY,data[:, 1].reshape(13,13), cmap='viridis', shading='auto',edgecolors = 'r',linewidths=0.5,norm = colors.LogNorm(vmin=1, vmax=data[:, 1].max()))
-    plt.title("LAPPD 133 Hits")
+    plt.title("LAPPD 133 Hits from Muon Vertex Positions")
     ax2.set_xticks(x_vals)
     ax2.set_yticks(y_vals)
-
-    plt.colorbar()
+    ax2.set_xlabel("X Position (m)")
+    ax2.set_ylabel("Y Position (m)")
+    cbar2 = plt.colorbar()
+    cbar2.set_label('Number of Hits', fontsize=12, rotation=270, labelpad=15)
 
     plt.show()
 
     #Plotting LAPPD 134 Hits
     fig3,ax3 = plt.subplots()
     plt.pcolormesh(XX,YY,data[:, 2].reshape(13,13), cmap='viridis', shading='auto',edgecolors = 'r',linewidths=0.5,norm = colors.LogNorm(vmin=1, vmax=data[:, 2].max()))
-    plt.title("LAPPD 134 Hits")
+    plt.title("LAPPD 134 Hits from Muon Vertex Positions")
     ax3.set_xticks(x_vals)
     ax3.set_yticks(y_vals)
-
-    plt.colorbar()
-
+    ax3.set_xlabel("X Position (m)")
+    ax3.set_ylabel("Y Position (m)")
+    cbar3 = plt.colorbar()
+    cbar3.set_label('Number of Hits', fontsize=12, rotation=270, labelpad=15)
     plt.show()
 if __name__ == "__main__":
     main()
