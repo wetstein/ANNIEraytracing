@@ -74,20 +74,6 @@ def main() -> None:
     print("\n── Per-detector hits (first 10) ──")
     print(by_detector.head(10))
 
-    # ── Example: hits on PMT 42 in every event ────────────────────
-    pmt42 = by_detector.query(
-        "detector_system == 0 and detector_index == 42"
-    )
-    print(f"\n── PMT index 42: {len(pmt42)} events with hits ──")
-    if not pmt42.empty:
-        print(pmt42.head())
-
-    # ── Example: all ANNIE LAPPD hits ─────────────────────────────
-    annie = by_detector.query("detector_system == 2")
-    print(f"\n── ANNIE LAPPD hits: {len(annie)} rows ──")
-    if not annie.empty:
-        print(annie.head())
-
     # ── Muon truth parameters ─────────────────────────────────────
     try:
         muons = pq.read_table(args.muons).to_pandas()
@@ -96,6 +82,18 @@ def main() -> None:
     if muons is not None:
         print(f"\n── Muon truth: {len(muons)} events ──")
         print(muons.head())
+
+        # ── Full-length hit-count vector for PMT 42 ───────────────
+        pmt42 = by_detector.query(
+            "detector_system == 0 and detector_index == 42"
+        )
+        counts = pmt42.set_index("event_id")["n_hits"]    # event_id -> n_hits
+        full = counts.reindex(muons["event_id"], fill_value=0)
+        vec = full.values                                  # numpy array, len = n_events
+        nz = (vec > 0).sum()
+        print(f"\n── PMT 42 hit-count vector: len={len(vec)}, "
+              f"{nz} non-zero ({100 * nz / len(vec):.1f}%) ──")
+        print(vec[:12], "...")
 
         # Merge muon params with per-event hit summaries
         ev = per_event.reset_index()
