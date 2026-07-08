@@ -72,17 +72,28 @@ def main() -> None:
 
     data = tablePhotonsPerMuonHits[["n_pmt132", "n_pmt133", "n_pmt134"]].to_numpy() #Selecting needed data and converting to np array
     
+
+
+    xpos = tablePhotonsPerMuonHits["pos_x"].to_numpy() #Converting x positions to a numpy array
+    zpos = tablePhotonsPerMuonHits["pos_z"].to_numpy() #Converting z positions to a numpy array
+    
+    numX = len(np.unique(xpos)) #gets the unique number of x cords | These are the columns 
+    numZ = len(np.unique(zpos)) #gets the unique number of z cords | These are the rows
+
     #Plotting color mesh
-    x_vals = np.linspace(-1.2, 1.2, 13) #make this based on data from "tablePhotonPerMuonHits" 
-    y_vals = np.linspace(-1.2, 1.2, 13)
-    XX,YY = np.meshgrid(x_vals, y_vals)
+    x_vals = np.linspace(np.min(xpos), np.max(xpos), numX)/(10**3) #m
+    z_vals = np.linspace(np.min(zpos), np.max(zpos), numZ)/(10**3) #m
+    XX,ZZ = np.meshgrid(x_vals, z_vals)
+    
+    
+    #Plotting LAPPD 132 Hits
     fig,ax = plt.subplots()
-    plt.pcolormesh(XX,YY,data[:, 0].reshape(13,13), cmap='viridis', shading='auto',edgecolors = 'r',linewidths=0.5,norm = colors.LogNorm(vmin=1, vmax=data[:, 0].max()))
+    plt.pcolormesh(XX,ZZ,data[:, 0].reshape(numZ,numX), cmap='viridis', shading='auto',edgecolors = 'r',linewidths=0.5,norm = colors.LogNorm(vmin=1, vmax=data[:, 0].max()))
     plt.title("LAPPD 132 Hits from Muon Vertex Positions")
     ax.set_xticks(x_vals)
-    ax.set_yticks(y_vals)
+    ax.set_yticks(z_vals)
     ax.set_xlabel("X Position (m)")
-    ax.set_ylabel("Y Position (m)")
+    ax.set_ylabel("Y Position (m)") #this is outward facing so it should be labeled as y
     cbar1 = plt.colorbar()
     cbar1.set_label('Number of Hits', fontsize=12, rotation=270, labelpad=15)
     
@@ -91,10 +102,10 @@ def main() -> None:
 
     #Plotting LAPPD 133 Hits
     fig2,ax2 = plt.subplots()
-    plt.pcolormesh(XX,YY,data[:, 1].reshape(13,13), cmap='viridis', shading='auto',edgecolors = 'r',linewidths=0.5,norm = colors.LogNorm(vmin=1, vmax=data[:, 1].max()))
+    plt.pcolormesh(XX,ZZ,data[:, 1].reshape(numZ,numX), cmap='viridis', shading='auto',edgecolors = 'r',linewidths=0.5,norm = colors.LogNorm(vmin=1, vmax=data[:, 1].max()))
     plt.title("LAPPD 133 Hits from Muon Vertex Positions")
     ax2.set_xticks(x_vals)
-    ax2.set_yticks(y_vals)
+    ax2.set_yticks(z_vals)
     ax2.set_xlabel("X Position (m)")
     ax2.set_ylabel("Y Position (m)")
     cbar2 = plt.colorbar()
@@ -104,10 +115,10 @@ def main() -> None:
 
     #Plotting LAPPD 134 Hits
     fig3,ax3 = plt.subplots()
-    plt.pcolormesh(XX,YY,data[:, 2].reshape(13,13), cmap='viridis', shading='auto',edgecolors = 'r',linewidths=0.5,norm = colors.LogNorm(vmin=1, vmax=data[:, 2].max()))
+    plt.pcolormesh(XX,ZZ,data[:, 2].reshape(numZ,numX), cmap='viridis', shading='auto',edgecolors = 'r',linewidths=0.5,norm = colors.LogNorm(vmin=1, vmax=data[:, 2].max()))
     plt.title("LAPPD 134 Hits from Muon Vertex Positions")
     ax3.set_xticks(x_vals)
-    ax3.set_yticks(y_vals)
+    ax3.set_yticks(z_vals)
     ax3.set_xlabel("X Position (m)")
     ax3.set_ylabel("Y Position (m)")
     cbar3 = plt.colorbar()
