@@ -30,24 +30,33 @@ Muon direction conventions:
 """
 
 import argparse
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pyarrow.parquet as pq
+
+from annieray.io_h5 import load_table
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Load and inspect batch output")
-    parser.add_argument("--hits", default="results/photon_hits.parquet",
-                        help="Path to photon_hits.parquet")
-    parser.add_argument("--pmts", default="results/pmt_responses.parquet",
-                        help="Path to pmt_responses.parquet")
-    parser.add_argument("--muons", default="results/muon_truth.parquet",
-                        help="Path to muon_truth.parquet")
+    parser.add_argument("--hits", default=None,
+                        help="Path to HDF5 output file (replaces --hits/--pmts/--muons)")
+    parser.add_argument("--pmts",
+                        help="Ignored (kept for backward compat)")
+    parser.add_argument("--muons",
+                        help="Ignored (kept for backward compat)")
+    parser.add_argument("output", nargs="?", default="results",
+                        help="Batch output directory (default results/)")
     args = parser.parse_args()
 
+    if args.hits:
+        h5_path = args.hits
+    else:
+        h5_path = Path(args.output) / "output.h5"
+
     # ── Load ──────────────────────────────────────────────────────
-    hits = pq.read_table(args.hits).to_pandas()
+    hits = load_table(h5_path, "photon_hits")
     print(f"photon_hits: {len(hits)} rows, {hits.event_id.nunique()} events")
 
     print(hits)
@@ -76,8 +85,8 @@ def main() -> None:
 
     # ── Muon truth parameters ─────────────────────────────────────
     try:
-        muons = pq.read_table(args.muons).to_pandas()
-    except (FileNotFoundError, OSError):
+        muons = load_table(h5_path, "muon_truth")
+    except (KeyError, OSError):
         muons = None
     if muons is not None:
         print(f"\n── Muon truth: {len(muons)} events ──")
@@ -120,8 +129,8 @@ def main() -> None:
 
     # ── PMT response data (if available) ──────────────────────────
     try:
-        pmts = pq.read_table(args.pmts).to_pandas()
-    except (FileNotFoundError, OSError):
+        pmts = load_table(h5_path, "pmt_responses")
+    except (KeyError, OSError):
         pmts = None
     if pmts is not None:
         print(f"\n── PMT responses: {len(pmts)} rows, "
@@ -132,7 +141,7 @@ def main() -> None:
         )
         print(per_event_charge.head())
     else:
-        print("\n(No pmt_responses.parquet found — skip --pmt-response?)")
+        print("\n(No pmt_responses in HDF5 — skip --pmt-response?)")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Event display for ANNIE batch output.
 
-Reads ``photon_hits.parquet``, ``detectors.csv``, and ``metadata.json``
-produced by ``annieray batch``.  Shows a three-panel layout:
+Reads ``output.h5`` produced by ``annieray batch``.  Shows a three-panel
+layout:
 
   Top view    – top endcap PMTs (panel 9) at (x, y) in tank cross-section
   Barrel      – unrolled cylinder (φ vs Z), barrel PMTs (panels 1-8) + LAPPDs
@@ -14,20 +14,21 @@ surfboard-mounted LAPPDs appear in the middle of the plot.
 Controls: ◀/▶ buttons or left/right arrow keys to navigate events.
 
 Usage:
-    python scripts/event_display.py results/photon_hits.parquet
+    python scripts/event_display.py results/
+    python scripts/event_display.py results/output.h5
 """
 
 import argparse
-import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pyarrow.parquet as pq
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 from matplotlib.patches import Circle
 from matplotlib.colors import Normalize
+
+from annieray.io_h5 import load_table, read_attrs
 
 
 # ---------------------------------------------------------------------------
@@ -35,22 +36,28 @@ from matplotlib.colors import Normalize
 # ---------------------------------------------------------------------------
 
 
-def load_data(hits_path, detector_path, meta_path, first_hit_time=False):
-    hits = pq.read_table(str(hits_path)).to_pandas()
+def load_data(h5_path, first_hit_time=False, charge=False, time=False):
+    hits = load_table(h5_path, "photon_hits")
     counts = hits.groupby(["event_id", "detector_system", "detector_index"]).size()
 
-    det = pd.read_csv(detector_path)
+    det = load_table(h5_path, "detectors")
 
-    with open(meta_path) as f:
-        meta = json.load(f)
+    meta = read_attrs(h5_path)
 
+    first_times = None
     if first_hit_time:
         first_times = hits.groupby(
             ["event_id", "detector_system", "detector_index"]
         )["arrival_time"].min()
-        return counts, first_times, det, meta
 
-    return counts, None, det, meta
+    pmt_charge = pmt_time = None
+    if charge or time:
+        pmt_df = load_table(h5_path, "pmt_responses")
+        if not pmt_df.empty:
+            pmt_charge = pmt_df.set_index(["event_id", "pmt_index"])["charge"]
+            pmt_time = pmt_df.set_index(["event_id", "pmt_index"])["time"]
+
+    return counts, first_times, det, meta, pmt_charge, pmt_time
 
 
 # ---------------------------------------------------------------------------
@@ -110,33 +117,43 @@ def keys_and_coords(det_list):
 
 def main():
     parser = argparse.ArgumentParser(description="ANNIE event display")
-    parser.add_argument("hits", type=Path, help="Path to photon_hits.parquet")
-    parser.add_argument("--detectors", type=Path, default=None,
-                        help="detectors.csv (default: same dir as hits)")
-    parser.add_argument("--metadata", type=Path, default=None,
-                        help="metadata.json (default: same dir as hits)")
+    parser.add_argument("input", type=Path, default=Path("results"),
+                        nargs="?",
+                        help="Batch output dir or output.h5 path (default: results/)")
     parser.add_argument("--linear", action="store_true",
-                        help="Linear color scale (default: log₁₀)")
-    parser.add_argument("--first-hit-time", action="store_true",
-                        help="Color by first-hit arrival time instead of hit count")
+                        help="Linear color scale (default: log\u2081\u2080)")
+    parser.add_argument("--hide-zero", action="store_true",
+                        help="Show PMTs with zero charge/hits as white")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--first-hit-time", action="store_true",
+                      help="Color by first-hit arrival time (ns) from photon_hits")
+    mode.add_argument("--charge", action="store_true",
+                      help="Color PMTs by integrated charge (PE) from digital model")
+    mode.add_argument("--time", action="store_true",
+                      help="Color PMTs by response time (ns) from digital model")
     args = parser.parse_args()
 
-    base = args.hits.parent
-    det_path = args.detectors or (base / "detectors.csv")
-    meta_path = args.metadata or (base / "metadata.json")
+    if args.input.suffix == ".h5":
+        h5_path = args.input
+    else:
+        h5_path = args.input / "output.h5"
 
-    for p in [args.hits, det_path, meta_path]:
-        if not p.exists():
-            print(f"Error: {p} not found")
-            return
+    if not h5_path.exists():
+        print(f"Error: {h5_path} not found")
+        return
 
-    print(f"Hits:      {args.hits}")
-    print(f"Detectors: {det_path}")
-    print(f"Metadata:  {meta_path}")
+    print(f"HDF5: {h5_path}")
 
-    counts, first_times, det_df, meta = load_data(
-        args.hits, det_path, meta_path, first_hit_time=args.first_hit_time,
+    counts, first_times, det_df, meta, pmt_charge, pmt_time = load_data(
+        h5_path, first_hit_time=args.first_hit_time,
+        charge=args.charge, time=args.time,
     )
+
+    if (args.charge or args.time) and pmt_charge is None:
+        print("Warning: no pmt_responses table in HDF5.  "
+              "Re-run batch with --pmt-response to use this mode.  "
+              "Falling back to raw hit counts.")
+        args.charge = args.time = False
 
     tank_r = meta["tank_radius_mm"]
     tank_z_min = meta["tank_z_min_mm"]
@@ -178,30 +195,47 @@ def main():
     ax_barrel = fig.add_subplot(gs[1])
     ax_bottom = fig.add_subplot(gs[2])
 
-    cmap = plt.cm.plasma
+    cmap = plt.cm.plasma.copy()
+    if args.hide_zero:
+        cmap.set_bad("white")
     norm = Normalize(vmin=0, vmax=None)
     use_log = not args.linear
 
     def raw_value(event_id: int, sc: int, di: int) -> float:
-        """Get the base value (hit count or first-hit time) for a detector."""
+        """Get the base value for a detector in the selected mode."""
+        if args.charge and sc == 0 and pmt_charge is not None:
+            try:
+                return float(pmt_charge.loc[(event_id, di)])
+            except KeyError:
+                return 0.0
+        if args.time and sc == 0 and pmt_time is not None:
+            try:
+                return float(pmt_time.loc[(event_id, di)])
+            except KeyError:
+                return 0.0
         if args.first_hit_time and first_times is not None:
             try:
                 return float(first_times.loc[(event_id, sc, di)])
             except KeyError:
                 return 0.0
-        else:
-            try:
-                return float(counts.loc[(event_id, sc, di)])
-            except KeyError:
-                return 0.0
+        try:
+            return float(counts.loc[(event_id, sc, di)])
+        except KeyError:
+            return 0.0
 
     def color_value(event_id: int, sc: int, di: int) -> float:
         v = raw_value(event_id, sc, di)
-        if use_log and not args.first_hit_time:
+        if args.time:
+            return v
+        if use_log:
             return np.log10(v + 1.0)
         return v
 
     def colorbar_label() -> str:
+        if args.charge:
+            return "charge (PE)" if args.linear else "log\u2081\u2080(charge + 1) (PE)"
+        if args.time:
+            return "response time (ns)"
         if args.first_hit_time:
             return "first hit time (ns)"
         return "log\u2081\u2080(n_hits + 1)" if use_log else "n_hits"
@@ -315,8 +349,10 @@ def main():
             colors = np.zeros(len(keys))
             for j, (sc, di) in enumerate(keys):
                 colors[j] = color_value(event_id, sc, di)
+            if args.hide_zero:
+                colors[colors == 0] = np.nan
             scatter.set_array(colors)
-            all_colors.extend(colors)
+            all_colors.extend(colors[~np.isnan(colors)] if args.hide_zero else colors)
 
         norm.vmax = max(all_colors) if all_colors else 1
         title_text.set_text(f"Event {event_id}  ({current[0] + 1}/{n_events})")
