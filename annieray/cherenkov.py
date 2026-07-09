@@ -123,3 +123,20 @@ def generate_cherenkov_photons(
     directions[:,2] = photonDirec[:,2]
 
     return origins, directions, createTime.astype(np.float32)
+
+
+def generate_isotropic_photons(
+    point: tuple[float, float, float, float],
+    n_photons: int,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    origins = np.full((n_photons, 3), point[:3], dtype=np.float32)
+    theta = np.arccos(rng.uniform(-1, 1, size=n_photons))
+    phi = rng.uniform(0, 2 * np.pi, size=n_photons)
+    directions = np.column_stack([
+        np.sin(theta) * np.cos(phi),
+        np.sin(theta) * np.sin(phi),
+        np.cos(theta),
+    ]).astype(np.float32)
+    create_times = np.full(n_photons, point[3] * 1e9, dtype=np.float32)
+    return origins, directions, create_times

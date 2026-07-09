@@ -13,7 +13,6 @@ from annieray.tracer import (
     trace_rays,
     trace_cherenkov,
     Geometry,
-    DET_SYS_PMT, DET_SYS_LAPPD_DEFAULT, DET_SYS_LAPPD_ANNIE,
 )
 from annieray.optics import load_optics_config
 from annieray.output import write_hits, write_detector_config
@@ -147,6 +146,52 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--optics-config", type=Path, default=None,
                        help="YAML file with per-material optical properties")
     batch.add_argument("--seed", type=int, default=None, help="Random seed")
+    batch.add_argument("--light-burst", action="store_true",
+                       help="Isotropic light burst (instead of muon Cherenkov)")
+    batch.add_argument("--burst-n-phots", type=int, default=1000,
+                       help="Number of isotropic photons per burst")
+    batch.add_argument("--burst-position", type=str, default=None,
+                       help="Burst centre: 'x y z' in mm (default: tank centre) ")
+
+    # ---- fit subcommand ----
+    fit = sub.add_parser("fit", help="Grid-scan direction fit for a single event")
+    fit.add_argument("h5", type=Path, help="Path to batch output HDF5 file")
+    fit.add_argument("--event", type=int, default=0, help="Event ID to fit")
+    fit.add_argument("--gdml", type=Path, default=Path("PHASE2_INNER_STRUCTURE_closed.gdml"),
+                     help="Path to GDML geometry mesh")
+    fit.add_argument("--pmt-csv", type=Path, default=None,
+                     help="Path to PMT scan file or CSV (default: PMTPositions_Scan.txt)")
+    fit.add_argument("--step", type=Path, default=None, help="Path to STEP CAD file")
+    fit.add_argument("--manifest", type=Path, default=None, help="Path to cached component manifest JSON")
+    fit.add_argument("--no-lappd", action="store_true", help="Skip LAPPD rectangles")
+    fit.add_argument("--z-offset", type=float, default=0.0, help="Vertical offset (mm)")
+    fit.add_argument("--lappd-model", choices=["default", "annie"], default="annie",
+                     help="LAPPD geometry model")
+    fit.add_argument("--det-rotation", type=float, default=22.5,
+                     help="Global Z-rotation (deg) so +Y aligns with octagon corner")
+    fit.add_argument("--surfboard", type=int, default=0, choices=[0, 1, 3],
+                     help="Number of obscurant PVC surfboards (0, 1, or 3)")
+    fit.add_argument("--grid-theta", type=str, default="0 180 19",
+                     help="Theta range: 'start stop steps' in deg (default: 0 180 19 → 10° steps)")
+    fit.add_argument("--grid-phi", type=str, default="0 360 37",
+                     help="Phi range: 'start stop steps' in deg (default: 0 360 37 → 10° steps)")
+    fit.add_argument("--photons-per-cm", type=int, default=None,
+                     help="Photons per cm for each hypothesis evaluation (default: auto-detect from muon_truth)")
+    fit.add_argument("--fix-vertex", type=str, default=None,
+                     help="Fixed vertex 'x y z' (default: from muon_truth)")
+    fit.add_argument("--fix-t0", type=float, default=None,
+                     help="Fixed t0 in ns (default: from muon_truth)")
+    fit.add_argument("--use-time", action="store_true",
+                     help="Include time residual likelihood")
+    fit.add_argument("--time-sigma", type=float, default=None,
+                     help="Global timing sigma (ns). Default: per-PMT-type from geometry.")
+    fit.add_argument("--alpha", type=float, default=1.0,
+                     help="Scale factor for time likelihood (default: 1.0)")
+    fit.add_argument("--seed", type=int, default=42, help="RNG seed for raytracing")
+    fit.add_argument("--save-grid", type=Path, default=None,
+                     help="Save likelihood grid to NPZ file")
+    fit.add_argument("--show", action="store_true",
+                     help="Show polar plot of likelihood surface")
 
     return p
 
@@ -361,6 +406,15 @@ def batch_command(args: argparse.Namespace) -> None:
             return
         muon_fixed = tuple(float(p) for p in parts)
 
+    # Parse burst position
+    burst_position = None
+    if args.burst_position:
+        parts = args.burst_position.split()
+        if len(parts) != 3:
+            print("Error: --burst-position requires 3 floats: x y z")
+            return
+        burst_position = tuple(float(p) for p in parts)
+
     config = BatchConfig(
         n_events=args.events,
         muon_fixed=muon_fixed,
@@ -375,6 +429,9 @@ def batch_command(args: argparse.Namespace) -> None:
         output_dir=args.output_dir,
         record_events=not args.no_record,
         seed=args.seed,
+        light_burst=args.light_burst,
+        burst_n_photons=args.burst_n_phots,
+        burst_position=burst_position,
     )
 
     # Validate
@@ -409,33 +466,13 @@ def batch_command(args: argparse.Namespace) -> None:
     import json
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    from annieray.batch import H5_OUTPUT_NAME
+    h5_path = output_dir / H5_OUTPUT_NAME
 
-    # Tank metadata
-    meta = {
-        "tank_radius_mm": geom.tank_radius,
-        "tank_z_min_mm": geom.tank_z_min,
-        "tank_z_max_mm": geom.tank_z_max,
-    }
-    meta_path = output_dir / "metadata.json"
-    with open(meta_path, "w") as f:
-        json.dump(meta, f)
-    print(f"  Saved {meta_path}")
-
-    # Detector registry
-    det_path = output_dir / "detectors.csv"
-    with open(det_path, "w") as f:
-        f.write("system_code,detector_index,x,y,z,label,panel\n")
-        for d in geom.detectors:
-            sys_code = {
-                "pmt": DET_SYS_PMT,
-                "lappd_default": DET_SYS_LAPPD_DEFAULT,
-                "lappd_annie": DET_SYS_LAPPD_ANNIE,
-            }.get(d.system, -1)
-            panel = getattr(d, "panel", -1)
-            f.write(f"{sys_code},{d.index},{d.position[0]},{d.position[1]},{d.position[2]},{d.label},{panel}\n")
-    print(f"  Saved {det_path}")
-
-    if args.muon_file:
+    if args.light_burst:
+        cx, cy, cz = burst_position or (0, 0, 1940)
+        print(f"  Light burst: {config.burst_n_photons} isotropic photons at ({cx:.0f}, {cy:.0f}, {cz:.0f}) mm")
+    elif args.muon_file:
         print(f"  Muon topology: from file ({args.muon_file})")
     elif muon_fixed:
         print(f"  Muon topology: fixed {muon_fixed}")
@@ -457,7 +494,132 @@ def batch_command(args: argparse.Namespace) -> None:
         print(f"  Multi-bounce optics: max {args.max_bounces} reflections")
 
     paths = run_batch(geom, config, optics_config=optics_cfg)
+
+    # Write metadata and detectors into the HDF5 file (append mode)
+    if h5_path.exists():
+        from annieray.io_h5 import write_metadata, write_detectors
+        meta = {
+            "tank_radius_mm": geom.tank_radius,
+            "tank_z_min_mm": geom.tank_z_min,
+            "tank_z_max_mm": geom.tank_z_max,
+        }
+        write_metadata(h5_path, meta)
+        print(f"  Wrote metadata to {h5_path}")
+        write_detectors(h5_path, geom.detectors)
+
     print("Done.")
+
+
+# ---------------------------------------------------------------------------
+# Fit command
+# ---------------------------------------------------------------------------
+
+
+def _parse_range(s: str) -> tuple[float, float, int]:
+    """Parse 'start stop steps' into a 3-tuple."""
+    parts = s.split()
+    if len(parts) != 3:
+        raise ValueError(f"Expected 'start stop steps', got '{s}'")
+    return float(parts[0]), float(parts[1]), int(parts[2])
+
+
+def fit_command(args: argparse.Namespace) -> None:
+    from annieray.fitting import load_observed_event, grid_scan_direction
+
+    # Resolve PMT CSV (default: PMTPositions_Scan.txt in current directory)
+    pmt_csv = args.pmt_csv
+    if pmt_csv is None:
+        candidate = Path("PMTPositions_Scan.txt")
+        if candidate.exists():
+            pmt_csv = candidate
+
+    print(f"Loading geometry from {args.gdml}...")
+    geom = build_geometry(
+        args.gdml,
+        step_path=args.step,
+        manifest_path=args.manifest,
+        pmt_csv_path=pmt_csv,
+        no_lappd=args.no_lappd,
+        z_offset=args.z_offset,
+        lappd_model=args.lappd_model,
+        det_rotation_deg=args.det_rotation,
+        n_surfboards=args.surfboard,
+    )
+
+    # Parse grid ranges
+    theta_range = _parse_range(args.grid_theta)
+    phi_range = _parse_range(args.grid_phi)
+    print(f"  Grid: θ∈[{theta_range[0]:.0f},{theta_range[1]:.0f}]×{theta_range[2]} "
+          f"φ∈[{phi_range[0]:.0f},{phi_range[1]:.0f}]×{phi_range[2]}")
+
+    # Parse fix-vertex
+    fix_vertex = None
+    if args.fix_vertex:
+        parts = args.fix_vertex.split()
+        if len(parts) != 3:
+            print("Error: --fix-vertex requires 3 floats: x y z")
+            return
+        fix_vertex = tuple(float(p) for p in parts)
+
+    print(f"Loading observed data for event {args.event}...")
+    observed = load_observed_event(args.h5, args.event)
+
+    print(f"  True direction: θ={observed.true_theta:.1f}°, φ={observed.true_phi:.1f}°")
+    if observed.true_pos:
+        print(f"  True vertex: ({observed.true_pos[0]:.0f}, {observed.true_pos[1]:.0f}, "
+              f"{observed.true_pos[2]:.0f}) mm")
+    print(f"  {len(observed.hit_pmt_indices)} / {len(observed.all_pmt_indices)} PMTs hit")
+
+    ppcm = args.photons_per_cm or observed.true_photons_per_cm or 150
+    if args.photons_per_cm is None:
+        print(f"  Photons per cm: auto-detected as {ppcm} from muon_truth")
+    else:
+        print(f"  Photons per cm: {ppcm} (user-specified)")
+
+    time_sigma: float | None = args.time_sigma
+
+    result = grid_scan_direction(
+        observed,
+        geom,
+        theta_range=theta_range,
+        phi_range=phi_range,
+        fix_vertex=fix_vertex,
+        fix_t0=args.fix_t0,
+        photons_per_cm=args.photons_per_cm,
+        use_time=args.use_time,
+        alpha=args.alpha,
+        time_sigma=time_sigma,
+        rng_seed=args.seed,
+    )
+
+    print(f"\nBest fit: θ={result.best_theta:.1f}°, φ={result.best_phi:.1f}°")
+    if result.true_theta is not None:
+        d_theta = result.best_theta - result.true_theta
+        d_phi = result.best_phi - result.true_phi
+        print(f"  True:    θ={result.true_theta:.1f}°, φ={result.true_phi:.1f}°")
+        print(f"  Δθ={d_theta:+.1f}°, Δφ={d_phi:+.1f}°")
+    print(f"  LL = {result.best_score:.1f}")
+    print(f"  {result.timing['n_evaluations']} evaluations in {result.timing['elapsed_s']:.1f}s")
+
+    if args.save_grid:
+        np.savez(
+            args.save_grid,
+            theta_grid=result.theta_grid,
+            phi_grid=result.phi_grid,
+            scores=result.scores,
+            best_theta=result.best_theta,
+            best_phi=result.best_phi,
+            true_theta=result.true_theta,
+            true_phi=result.true_phi,
+        )
+        print(f"  Saved grid to {args.save_grid}")
+
+    if args.show:
+        try:
+            from scripts.fit_viewer import plot_polar
+            plot_polar(result)
+        except ImportError:
+            print("  --show requires scripts/fit_viewer.py (not found)")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -483,6 +645,8 @@ def main(argv: list[str] | None = None) -> None:
         run_lappd_server(host=args.host, port=args.port)
     elif args.command == "batch":
         batch_command(args)
+    elif args.command == "fit":
+        fit_command(args)
     else:
         parser.print_help()
 

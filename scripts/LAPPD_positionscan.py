@@ -8,7 +8,7 @@ Usage:
     python scripts/LAPPD_positionscan.py results/output.h5
 """
 
-import sys
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -20,14 +20,15 @@ from annieray.io_h5 import load_table
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        h5_path = Path("results")
-    else:
-        h5_path = Path(sys.argv[1])
+    parser = argparse.ArgumentParser(
+        description="LAPPD position-scan heatmap from batch output"
+    )
+    parser.add_argument("input", type=Path, default=Path("results"), nargs="?",
+                        help="Batch output dir or output.h5 path")
+    args = parser.parse_args()
 
-    if h5_path.suffix == ".h5":
-        pass
-    else:
+    h5_path = args.input
+    if h5_path.suffix != ".h5":
         h5_path = h5_path / "output.h5"
 
     if not h5_path.exists():

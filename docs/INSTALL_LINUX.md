@@ -87,7 +87,7 @@ bash Miniforge3-$(uname)-$(uname -m).sh
 # Create environment with cadquery from conda-forge
 conda create -n annie python=3.12
 conda activate annie
-conda install -c conda-forge cadquery pyarrow lxml pyyaml numpy
+conda install -c conda-forge cadquery h5py lxml pyyaml numpy
 pip install taichi
 ```
 
@@ -105,7 +105,7 @@ pip install -e . --no-deps
 cadquery, so install the other deps by hand:
 
 ```bash
-pip install taichi numpy pyarrow lxml pyyaml
+pip install taichi numpy h5py lxml pyyaml
 pip install -e . --no-deps
 ```
 
@@ -190,4 +190,4 @@ WebGL for the Three.js rendering.
 | `Cannot open self /usr/bin/python3` | System Python too old | Install Python 3.11+ from deadsnakes PPA or python.org |
 | `import taichi` crashes or `ti.cuda` unavailable | CUDA not installed or incompatible | Run with CPU only (default).  Taichi prints a clear error if it can't find a requested backend. |
 | Performance warning from Taichi, arch = `x64` | No GPU detected | Normal — CPU mode is ~2-5× slower than GPU.  If you have an NVIDIA card, install CUDA toolkit. |
-| `pyarrow.lib.ArrowInvalid: ...` | Corrupt parquet from killed job | Re-run with `--events` smaller or longer timeout |
+ | `h5py failed to open file` | File corrupt from killed job | Delete and re-run with smaller `--events` or longer timeout |
