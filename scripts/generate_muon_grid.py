@@ -18,8 +18,8 @@ import argparse
 import itertools
 import math
 
-NX = 13
-NZ = 13
+NX = 5 #Set to 5 for quicker testing
+NZ = 5 #Set to 5 for quicker testing
 X_MIN, X_MAX = -1200.0, 1200.0
 Z_MIN, Z_MAX = 300.0, 2700.0
 Y = 0.0
