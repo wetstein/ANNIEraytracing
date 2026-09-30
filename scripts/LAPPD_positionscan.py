@@ -49,7 +49,7 @@ def main() -> None:
         return
 
     # ANNIE LAPPDs have indices 132, 133, 134
-    LAPPD_Indices = [129, 130, 131] #Tried changing the indices but to no avail
+    LAPPD_Indices = [132, 133, 134] #Tried changing the indices but to no avail
     lappd_hits = hits[hits["detector_system"].isin(LAPPD_Indices)]
     if lappd_hits.empty:
         print("No LAPPD hits found.")

@@ -65,7 +65,7 @@ python -m annieray batch [flags]
 | `--batch-size` | 50 | Events per GPU launch (higher = faster) |
 | `--muon-fixed` | None | Fixed muon topology: `"x y z t0 dx dy dz"` (7 floats) |
 | `--muon-file` | None | File with one topology per line |
-| `--surfboard` | 0 | PVC surfboard panels (`0`, `1`, or `3`) |
+| `--surfboard` | 0 | PVC surfboard panels (`0`, `1`, or `3`) This flag gets the LAPPD response if you use "3" on the flag| 
 | `--lappd-model` | `annie` | LAPPD geometry (`default` / `annie`) |
 | `--lappd-indices` | None | Comma-separated LAPPD candidate indices from STEP |
 | `--det-rotation` | 22.5 | Global Z-rotation (deg) |
