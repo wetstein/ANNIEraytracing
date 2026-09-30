@@ -39,9 +39,16 @@ from annieray.io_h5 import load_table, read_attrs
 def load_data(h5_path, first_hit_time=False, charge=False, time=False):
     hits = load_table(h5_path, "photon_hits")
     counts = hits.groupby(["event_id", "detector_system", "detector_index"]).size()
+    with open("counts_check.txt", "w") as f:
+        counts.to_csv(f, sep="\t", header=True)
+    with open("hits_check.txt", "w") as f:
+        hits.to_csv(f, sep="\t", index=False, header=True)
 
     det = load_table(h5_path, "detectors")
-    print(det) #Added this to see what the detector table looks like
+
+    with open("detectors_check.txt", "w") as f:
+        det.to_csv(f, sep="\t", index=False, header=True)
+
     meta = read_attrs(h5_path)
 
     first_times = None
