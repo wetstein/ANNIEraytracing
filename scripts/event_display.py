@@ -41,7 +41,7 @@ def load_data(h5_path, first_hit_time=False, charge=False, time=False):
     counts = hits.groupby(["event_id", "detector_system", "detector_index"]).size()
 
     det = load_table(h5_path, "detectors")
-
+    print(det) #Added this to see what the detector table looks like
     meta = read_attrs(h5_path)
 
     first_times = None
@@ -96,7 +96,6 @@ def classify_detectors(det_df):
         else:
             phi = float(np.degrees(np.arctan2(y, x)))
             barrel_lappd.append((sys_code, idx, phi, z, label))
-
     return top, barrel_pmt, barrel_lappd, bottom
 
 
@@ -169,7 +168,7 @@ def main():
 
     # ---- Classify detectors ----------------------------------------------
     top, barrel_pmt, barrel_lappd, bottom = classify_detectors(det_df)
-
+    print("Barrel_lappd Check:", barrel_lappd) #Checking contents
     top_keys, top_xs, top_ys = keys_and_coords(top)
     bp_keys,  bp_xs,  bp_ys  = keys_and_coords(barrel_pmt)
     bl_keys,  bl_xs,  bl_ys  = keys_and_coords(barrel_lappd)

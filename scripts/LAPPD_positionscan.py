@@ -48,15 +48,15 @@ def main() -> None:
         print("No muon_truth found.")
         return
 
-    # ANNIE LAPPDs have indices 132, 133, 134 (sys_code == 2)
-    LAPPD_Indices = [132, 133, 134]
-    lappd_hits = hits[hits["detector_index"].isin(LAPPD_Indices)]
+    # ANNIE LAPPDs have indices 132, 133, 134
+    LAPPD_Indices = [129, 130, 131] #Tried changing the indices but to no avail
+    lappd_hits = hits[hits["detector_system"].isin(LAPPD_Indices)]
     if lappd_hits.empty:
         print("No LAPPD hits found.")
         return
 
-    counts = lappd_hits.groupby(["event_id", "detector_index"]).size().reset_index(name="n_hits")
-    pivoted = counts.pivot(index="event_id", columns="detector_index", values="n_hits").fillna(0).astype(int)
+    counts = lappd_hits.groupby(["event_id", "detector_system"]).size().reset_index(name="n_hits")
+    pivoted = counts.pivot(index="event_id", columns="detector_system", values="n_hits").fillna(0).astype(int)
 
     # Merge with muon positions (positions in mm, convert to m for plotting)
     merged = muons[["event_id", "pos_x", "pos_z"]].merge(pivoted, on="event_id", how="left").fillna(0)
