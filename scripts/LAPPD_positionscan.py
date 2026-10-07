@@ -52,11 +52,14 @@ def main() -> None:
     LAPPD_Indices = [132, 133, 134] #Tried changing the indices but to no avail
     lappd_hits = hits[hits["detector_system"].isin(LAPPD_Indices)]
     if lappd_hits.empty:
-        print("No LAPPD hits found.")
-        return
+        print("No LAPPD hits found. Using hits_check.txt to look read in data")
 
-    counts = lappd_hits.groupby(["event_id", "detector_system"]).size().reset_index(name="n_hits")
-    pivoted = counts.pivot(index="event_id", columns="detector_system", values="n_hits").fillna(0).astype(int)
+    
+    lappd_hits = pd.read_csv("hits_check.txt", sep="\t") #Added this to read in the hits_check.txt file as a temporary way to use the data
+    lappd_hits = lappd_hits[lappd_hits["detector_index"].isin(LAPPD_Indices)]
+    print(lappd_hits.to_string()) #Checking inside 
+    counts = lappd_hits.groupby(["event_id", "detector_index"]).size().reset_index(name="n_hits")
+    pivoted = counts.pivot(index="event_id", columns="detector_index", values="n_hits").fillna(0).astype(int)
 
     # Merge with muon positions (positions in mm, convert to m for plotting)
     merged = muons[["event_id", "pos_x", "pos_z"]].merge(pivoted, on="event_id", how="left").fillna(0)
